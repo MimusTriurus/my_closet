@@ -1,0 +1,2371 @@
+<title>YourCloset</title>
+<style>
+:root { color-scheme: light; }
+:root{
+  --bg:#faf7f4; --surface:#ffffff; --surface-2:#f2ece7; --line:#e6ddd5;
+  --text:#241f1c; --muted:#8b7f76; --accent:#c1785c; --accent-soft:#f6e7df;
+  --danger:#c0483f; --ok:#4f8a5b;
+  --r:14px; --r-sm:10px; --shadow:0 1px 2px rgba(36,31,28,.06),0 6px 18px rgba(36,31,28,.07);
+  --tabh:58px; --toph:52px;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--surface-2);color:var(--text);
+  font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;overscroll-behavior:none;
+}
+button{font:inherit;color:inherit;cursor:pointer}
+img{max-width:100%;display:block}
+
+#app{
+  max-width:480px;margin:0 auto;height:100dvh;background:var(--bg);
+  display:flex;flex-direction:column;position:relative;
+  box-shadow:0 0 40px rgba(36,31,28,.12);overflow:hidden;
+  isolation:isolate;   /* модалки должны перекрывать FAB и таббар */
+}
+
+/* ---------- topbar ---------- */
+#topbar{
+  height:var(--toph);flex:0 0 auto;display:flex;align-items:center;gap:8px;
+  padding:0 10px;background:var(--bg);border-bottom:1px solid var(--line);z-index:20;
+}
+#tb-title{font-size:17px;font-weight:650;margin:0;flex:1;text-align:center;letter-spacing:-.01em}
+.tb-left,.tb-right{min-width:76px;display:flex;gap:4px;align-items:center}
+.tb-right{justify-content:flex-end}
+.icon-btn{
+  background:none;border:0;padding:6px 8px;border-radius:10px;font-size:19px;line-height:1;
+}
+.icon-btn:hover{background:var(--surface-2)}
+#tb-back{font-size:26px;font-weight:300}
+
+/* ---------- views ---------- */
+main#views{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
+.view{padding:12px 12px 90px}
+
+/* ---------- tabbar ---------- */
+#tabbar{
+  height:var(--tabh);flex:0 0 auto;display:grid;grid-template-columns:repeat(5,1fr);
+  background:var(--surface);border-top:1px solid var(--line);z-index:20;
+}
+#tabbar button{
+  background:none;border:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:2px;font-size:10px;color:var(--muted);padding:0;
+}
+#tabbar button .ic{font-size:19px;filter:grayscale(1) opacity(.65)}
+#tabbar button.active{color:var(--accent);font-weight:600}
+#tabbar button.active .ic{filter:none}
+
+/* ---------- generic ---------- */
+.row{display:flex;align-items:center;gap:8px}
+.spacer{flex:1}
+.muted{color:var(--muted)}
+.small{font-size:12px}
+.center{text-align:center}
+.hidden{display:none !important}
+
+.btn{
+  border:1px solid var(--line);background:var(--surface);border-radius:999px;
+  padding:8px 14px;font-size:13px;font-weight:550;white-space:nowrap;
+}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{filter:brightness(1.06)}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--muted)}
+.btn.danger{color:var(--danger);border-color:#eccfcc}
+.btn.block{width:100%;justify-content:center;text-align:center;border-radius:var(--r)}
+.btn:disabled{opacity:.45;pointer-events:none}
+.btn-sm{padding:5px 10px;font-size:12px}
+
+.fab{
+  position:absolute;right:14px;bottom:calc(var(--tabh) + 14px);z-index:30;
+  width:54px;height:54px;border-radius:50%;border:0;background:var(--accent);color:#fff;
+  font-size:28px;line-height:1;box-shadow:0 6px 20px rgba(193,120,92,.45);
+}
+
+.chips{display:flex;gap:6px;overflow-x:auto;padding:2px 0 6px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{
+  border:1px solid var(--line);background:var(--surface);border-radius:999px;
+  padding:6px 12px;font-size:12.5px;white-space:nowrap;display:flex;align-items:center;gap:6px;
+}
+.chip.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.chip .cnt{opacity:.6;font-size:11px}
+.chip.active .cnt{opacity:.85}
+
+.section-title{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 2px 8px;font-weight:650}
+
+.empty{padding:44px 20px;text-align:center;color:var(--muted)}
+.empty .big{font-size:40px;margin-bottom:10px}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+
+/* ---------- grids ---------- */
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.grid.g2{grid-template-columns:repeat(2,1fr)}
+.tile{
+  position:relative;border-radius:var(--r);overflow:hidden;border:1px solid var(--line);
+  background:var(--surface);aspect-ratio:3/4;display:flex;align-items:center;justify-content:center;
+}
+.tile img{width:100%;height:100%;object-fit:contain;padding:6px}
+.tile .lbl{
+  position:absolute;left:0;right:0;bottom:0;padding:14px 6px 5px;font-size:11px;
+  color:#fff;background:linear-gradient(transparent,rgba(0,0,0,.6));
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.tile .fav{position:absolute;top:5px;right:6px;font-size:13px}
+.tile.sel{outline:3px solid var(--accent);outline-offset:-3px}
+.tile .badge{position:absolute;top:5px;left:5px;background:rgba(255,255,255,.9);border-radius:6px;font-size:10px;padding:1px 5px}
+
+/* ---------- color dots ---------- */
+.dots{display:flex;gap:3px}
+.dot{width:13px;height:13px;border-radius:50%;border:1px solid rgba(0,0,0,.12)}
+.swatch{width:34px;height:34px;border-radius:10px;border:1px solid rgba(0,0,0,.12);flex:0 0 auto}
+.swatch.sel{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---------- modal ---------- */
+.modal-back{
+  position:fixed;inset:0;background:rgba(28,22,18,.45);z-index:100;
+  display:flex;align-items:flex-end;justify-content:center;animation:fade .15s ease;
+}
+@keyframes fade{from{opacity:0}}
+@keyframes up{from{transform:translateY(20px);opacity:.4}}
+.modal{
+  width:100%;max-width:480px;background:var(--bg);border-radius:18px 18px 0 0;
+  max-height:92dvh;display:flex;flex-direction:column;animation:up .18s ease;
+}
+.modal.full{height:100dvh;max-height:100dvh;border-radius:0}
+.modal-head{
+  display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line);flex:0 0 auto;
+}
+.modal-head h2{font-size:16px;margin:0;flex:1;font-weight:650}
+.modal-body{padding:12px;overflow:auto;flex:1 1 auto}
+.modal-foot{padding:10px 12px;border-top:1px solid var(--line);display:flex;gap:8px;flex:0 0 auto;background:var(--bg)}
+.modal-foot .btn{flex:1}
+
+label.field{display:block;margin-bottom:12px}
+label.field>span{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;font-weight:600}
+input[type=text],input[type=date],input[type=number],select,textarea{
+  width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-sm);
+  background:var(--surface);font:inherit;color:inherit;
+}
+input[type=range]{width:100%;accent-color:var(--accent)}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent-soft);border-color:var(--accent)}
+
+/* ---------- list rows ---------- */
+.list{display:flex;flex-direction:column;gap:8px}
+.lrow{
+  display:flex;align-items:center;gap:10px;padding:10px;background:var(--surface);
+  border:1px solid var(--line);border-radius:var(--r);
+}
+.lrow .thumb{width:44px;height:52px;object-fit:contain;background:var(--surface-2);border-radius:8px;flex:0 0 auto}
+.lrow .t{flex:1;min-width:0}
+.lrow .t b{display:block;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lrow .t span{font-size:12px;color:var(--muted)}
+
+/* ---------- editor ---------- */
+#ed-wrap{
+  flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;
+  background:repeating-conic-gradient(#e9e3dd 0 25%, #f7f3ef 0 50%) 0 0/16px 16px;
+  position:relative;touch-action:none;
+}
+#ed-canvas{max-width:100%;max-height:100%;touch-action:none;cursor:crosshair}
+.tools{display:flex;gap:6px;overflow-x:auto;padding:8px 10px;background:var(--surface);border-top:1px solid var(--line);scrollbar-width:none}
+.tools::-webkit-scrollbar{display:none}
+.tool{
+  border:1px solid var(--line);background:var(--bg);border-radius:12px;padding:7px 10px;
+  font-size:11px;display:flex;flex-direction:column;align-items:center;gap:3px;min-width:60px;
+}
+.tool .ic{font-size:17px}
+.tool.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.tool-opts{padding:8px 12px;background:var(--surface);border-top:1px solid var(--line);font-size:12px}
+
+/* ---------- outfit editor ---------- */
+#stage-host{background:var(--surface-2);flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.palette-row{display:flex;gap:8px;overflow-x:auto;padding:8px 0;scrollbar-width:none}
+.palette-row::-webkit-scrollbar{display:none}
+
+/* ---------- calendar ---------- */
+.cal-head{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px}
+.cal-head div{text-align:center;font-size:11px;color:var(--muted);font-weight:600}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.cal-cell{
+  aspect-ratio:.78;border:1px solid var(--line);border-radius:9px;background:var(--surface);
+  position:relative;overflow:hidden;padding:2px;display:flex;flex-direction:column;
+}
+.cal-cell.out{opacity:.35}
+.cal-cell.today{border-color:var(--accent);border-width:2px}
+.cal-cell .d{font-size:10px;color:var(--muted);text-align:right;padding:0 2px;flex:0 0 auto}
+.cal-cell .pv{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.cal-cell .pv img{max-width:100%;max-height:100%;object-fit:contain}
+.cal-cell .n{position:absolute;left:3px;top:2px;font-size:9px;background:var(--accent);color:#fff;border-radius:5px;padding:0 4px}
+
+/* ---------- misc ---------- */
+#busy{position:fixed;inset:0;background:rgba(250,247,244,.82);z-index:300;display:flex;align-items:center;justify-content:center}
+.busy-box{text-align:center;color:var(--muted);font-size:13px}
+.spinner{
+  width:34px;height:34px;border:3px solid var(--line);border-top-color:var(--accent);
+  border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 10px;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+#toast-root{position:fixed;bottom:calc(var(--tabh) + 20px);left:0;right:0;z-index:400;display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none}
+.toast{background:#241f1c;color:#fff;padding:9px 16px;border-radius:999px;font-size:13px;box-shadow:var(--shadow)}
+
+.stat-row{display:flex;gap:8px;margin-bottom:10px}
+.stat{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:9px;text-align:center}
+.stat b{display:block;font-size:19px;font-weight:700}
+.stat span{font-size:11px;color:var(--muted)}
+
+video#cam{width:100%;border-radius:var(--r);background:#000}
+
+#busy[hidden]{display:none !important}
+
+</style>
+
+<div id="app">
+
+  <header id="topbar">
+    <div class="tb-left"><button id="tb-back" class="icon-btn" hidden aria-label="Назад">‹</button></div>
+    <h1 id="tb-title">Гардероб</h1>
+    <div class="tb-right" id="tb-actions"></div>
+  </header>
+
+  <main id="views">
+    <section class="view" id="view-closet"></section>
+    <section class="view" id="view-outfits" hidden></section>
+    <section class="view" id="view-calendar" hidden></section>
+    <section class="view" id="view-packing" hidden></section>
+    <section class="view" id="view-shop" hidden></section>
+  </main>
+
+  <nav id="tabbar">
+    <button data-tab="closet" class="active"><span class="ic">🧺</span><span>Гардероб</span></button>
+    <button data-tab="outfits"><span class="ic">👗</span><span>Образы</span></button>
+    <button data-tab="calendar"><span class="ic">🗓</span><span>Календарь</span></button>
+    <button data-tab="packing"><span class="ic">🧳</span><span>Чемодан</span></button>
+    <button data-tab="shop"><span class="ic">🛍</span><span>Каталог</span></button>
+  </nav>
+
+</div>
+
+<div id="modal-root"></div>
+<div id="toast-root"></div>
+<div id="busy" hidden><div class="busy-box"><div class="spinner"></div><div id="busy-text">Обработка…</div></div></div>
+
+<input type="file" id="file-input" accept="image/*" hidden>
+
+<script src="https://cdn.jsdelivr.net/npm/konva@9.3.16/konva.min.js"></script>
+<script type="module">
+/* ===== db.js ===== */
+// Минимальная обёртка над IndexedDB. Картинки храним как Blob — localStorage не подходит.
+const DB_NAME = 'yourcloset';
+const DB_VER = 1;
+const STORES = ['items', 'outfits', 'collections', 'cats', 'calendar', 'trips', 'meta'];
+
+let _db = null;
+
+function openDB() {
+  if (_db) return Promise.resolve(_db);
+  return new Promise((res, rej) => {
+    const req = indexedDB.open(DB_NAME, DB_VER);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      for (const s of STORES) {
+        if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = () => { _db = req.result; res(_db); };
+    req.onerror = () => rej(req.error);
+  });
+}
+
+function tx(store, mode) {
+  return openDB().then(db => db.transaction(store, mode).objectStore(store));
+}
+function wrap(request) {
+  return new Promise((res, rej) => {
+    request.onsuccess = () => res(request.result);
+    request.onerror = () => rej(request.error);
+  });
+}
+
+const dbAll = s => tx(s, 'readonly').then(o => wrap(o.getAll()));
+const dbGet = (s, id) => tx(s, 'readonly').then(o => wrap(o.get(id)));
+const dbPut = (s, v) => tx(s, 'readwrite').then(o => wrap(o.put(v))).then(() => v);
+const dbDel = (s, id) => tx(s, 'readwrite').then(o => wrap(o.delete(id)));
+const dbClear = s => tx(s, 'readwrite').then(o => wrap(o.clear()));
+
+function uid(prefix = 'i') {
+  return prefix + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+/* ===== ui.js ===== */
+// DOM-хелперы, модалки, тосты, индикатор занятости.
+
+const qs = (sel, root = document) => root.querySelector(sel);
+const qsa = (sel, root = document) => [...root.querySelectorAll(sel)];
+
+function h(tag, props = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (v == null || v === false) continue;
+    if (k === 'class') e.className = v;
+    else if (k === 'style' && typeof v === 'object') Object.assign(e.style, v);
+    else if (k === 'html') e.innerHTML = v;
+    else if (k.startsWith('on') && typeof v === 'function') e.addEventListener(k.slice(2), v);
+    else if (k === 'dataset') Object.assign(e.dataset, v);
+    else if (v === true) e.setAttribute(k, '');
+    else e.setAttribute(k, v);
+  }
+  for (const kid of kids.flat(3)) {
+    if (kid == null || kid === false) continue;
+    e.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  }
+  return e;
+}
+
+function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); return node; }
+
+/* ---- blob URL кэш ---- */
+const urlCache = new WeakMap();
+function urlFor(blob) {
+  if (!blob) return '';
+  if (typeof blob === 'string') return blob;
+  let u = urlCache.get(blob);
+  if (!u) { u = URL.createObjectURL(blob); urlCache.set(blob, u); }
+  return u;
+}
+
+/* ---- тосты ---- */
+function toast(msg, ms = 2000) {
+  const t = h('div', { class: 'toast' }, msg);
+  qs('#toast-root').append(t);
+  setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .25s'; }, ms - 250);
+  setTimeout(() => t.remove(), ms);
+}
+
+/* ---- busy ---- */
+function busy(on, text = 'Обработка…') {
+  const b = qs('#busy');
+  qs('#busy-text').textContent = text;
+  b.hidden = !on;
+}
+
+/* ---- модальные окна ---- */
+function openModal({ title, body, foot, full = false, onClose, closeText = '✕' }) {
+  const bodyEl = h('div', { class: 'modal-body' }, body || '');
+  const modal = h('div', { class: 'modal' + (full ? ' full' : '') },
+    h('div', { class: 'modal-head' },
+      h('h2', {}, title || ''),
+      h('button', { class: 'icon-btn', onclick: () => close() }, closeText)
+    ),
+    bodyEl,
+    foot && foot.length ? h('div', { class: 'modal-foot' }, foot) : null
+  );
+  const back = h('div', { class: 'modal-back' }, modal);
+  back.addEventListener('mousedown', e => { if (e.target === back && !full) close(); });
+  qs('#modal-root').append(back);
+
+  function close() {
+    back.remove();
+    if (onClose) onClose();
+  }
+  return { close, root: modal, body: bodyEl };
+}
+
+function confirmDialog(text, okText = 'Удалить') {
+  return new Promise(res => {
+    let answered = false;
+    const answer = v => { answered = true; res(v); m.close(); };
+    const m = openModal({
+      title: 'Подтверждение',
+      body: h('p', { style: { margin: '4px 0 8px' } }, text),
+      foot: [
+        h('button', { class: 'btn', onclick: () => answer(false) }, 'Отмена'),
+        h('button', { class: 'btn primary', onclick: () => answer(true) }, okText)
+      ],
+      onClose: () => { if (!answered) res(false); }
+    });
+  });
+}
+
+function promptDialog(title, value = '', label = 'Название') {
+  return new Promise(res => {
+    const input = h('input', { type: 'text', value });
+    let answered = false;
+    const answer = v => { answered = true; res(v); m.close(); };
+    const m = openModal({
+      title,
+      body: h('label', { class: 'field' }, h('span', {}, label), input),
+      foot: [
+        h('button', { class: 'btn', onclick: () => answer(null) }, 'Отмена'),
+        h('button', { class: 'btn primary', onclick: () => answer(input.value.trim() || null) }, 'ОК')
+      ],
+      onClose: () => { if (!answered) res(null); }
+    });
+    setTimeout(() => input.focus(), 60);
+  });
+}
+
+/* ---- выбор из списка действий ---- */
+function actionSheet(title, actions) {
+  return new Promise(res => {
+    let done = false;
+    const m = openModal({
+      title,
+      body: h('div', { class: 'list' },
+        actions.map(a => h('button', {
+          class: 'btn block' + (a.danger ? ' danger' : ''),
+          style: { textAlign: 'left', marginBottom: '2px' },
+          onclick: () => { done = true; res(a.id); m.close(); }
+        }, (a.icon ? a.icon + '  ' : '') + a.label))
+      ),
+      onClose: () => { if (!done) res(null); }
+    });
+  });
+}
+
+const fmtDate = d => {
+  const dt = typeof d === 'string' ? new Date(d + 'T00:00:00') : d;
+  return dt.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+};
+const iso = d => {
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
+
+/** replaceChildren, но с отбрасыванием null/false — иначе в DOM попадает текст "null". */
+function fill(el, ...kids) {
+  el.replaceChildren(...kids.flat(3).filter(k => k != null && k !== false));
+  return el;
+}
+
+/* ===== color.js ===== */
+// Работа с цветом: извлечение палитры вещи, сравнение в OKLab, названия цветов.
+
+const hexToRgb = hex => {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+};
+const rgbToHex = (r, g, b) =>
+  '#' + [r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+
+// sRGB -> OKLab (перцептивно равномерное пространство; сравнивать цвета в RGB нельзя)
+function oklab(r, g, b) {
+  const f = v => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+  const R = f(r), G = f(g), B = f(b);
+  const l = Math.cbrt(0.4122214708 * R + 0.5363325363 * G + 0.0514459929 * B);
+  const m = Math.cbrt(0.2119034982 * R + 0.6806995451 * G + 0.1073969566 * B);
+  const s = Math.cbrt(0.0883024619 * R + 0.2817188376 * G + 0.6299787005 * B);
+  return [
+    0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+    1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s
+  ];
+}
+
+// Расстояние между цветами (0 — идентичны, ~0.35+ — совсем разные)
+function colorDist(hexA, hexB) {
+  const a = oklab(...hexToRgb(hexA)), b = oklab(...hexToRgb(hexB));
+  // светлота весит меньше — иначе тёмно-синий и чёрный «не похожи», хотя визуально близки
+  const dl = (a[0] - b[0]) * 0.8, da = a[1] - b[1], db = a[2] - b[2];
+  return Math.sqrt(dl * dl + da * da + db * db);
+}
+
+/**
+ * Достаёт доминирующие цвета из изображения (прозрачные пиксели игнорируются).
+ * Уменьшаем до 64x64 — быстро и достаточно точно.
+ */
+function extractPalette(source, k = 5) {
+  const S = 64;
+  const c = document.createElement('canvas');
+  c.width = S; c.height = S;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(source, 0, 0, S, S);
+  const d = ctx.getImageData(0, 0, S, S).data;
+
+  // грубая квантизация в кубы 32x32x32, затем слияние близких по OKLab
+  const buckets = new Map();
+  let total = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] < 140) continue;                       // фон вырезан — пропускаем
+    const r = d[i], g = d[i + 1], b = d[i + 2];
+    const key = (r >> 5) * 64 + (g >> 5) * 8 + (b >> 5);
+    let acc = buckets.get(key);
+    if (!acc) buckets.set(key, acc = [0, 0, 0, 0]);
+    acc[0] += r; acc[1] += g; acc[2] += b; acc[3]++;
+    total++;
+  }
+  if (!total) return [];
+
+  let list = [...buckets.values()]
+    .map(a => ({ hex: rgbToHex(a[0] / a[3], a[1] / a[3], a[2] / a[3]), n: a[3] }))
+    .sort((x, y) => y.n - x.n);
+
+  const merged = [];
+  for (const cand of list) {
+    const near = merged.find(m => colorDist(m.hex, cand.hex) < 0.075);
+    if (near) near.n += cand.n; else merged.push({ ...cand });
+    if (merged.length >= k * 3) break;
+  }
+  return merged.slice(0, k).map(m => ({ hex: m.hex, ratio: +(m.n / total).toFixed(3) }));
+}
+
+// Базовая палитра для поиска «по цвету»
+const BASE_COLORS = [
+  { hex: '#000000', name: 'Чёрный' }, { hex: '#4a4a4a', name: 'Серый' },
+  { hex: '#b9b3ad', name: 'Светло-серый' }, { hex: '#ffffff', name: 'Белый' },
+  { hex: '#efe3cf', name: 'Бежевый' }, { hex: '#8b5e3c', name: 'Коричневый' },
+  { hex: '#c1785c', name: 'Терракота' }, { hex: '#d94f45', name: 'Красный' },
+  { hex: '#e58a3c', name: 'Оранжевый' }, { hex: '#e9c94b', name: 'Жёлтый' },
+  { hex: '#6fa85c', name: 'Зелёный' }, { hex: '#2f6d5a', name: 'Изумрудный' },
+  { hex: '#4b8fc4', name: 'Голубой' }, { hex: '#28406e', name: 'Синий' },
+  { hex: '#7b5ea7', name: 'Фиолетовый' }, { hex: '#d98fb0', name: 'Розовый' }
+];
+
+function colorName(hex) {
+  let best = BASE_COLORS[0], bd = 1e9;
+  for (const c of BASE_COLORS) {
+    const d = colorDist(hex, c.hex);
+    if (d < bd) { bd = d; best = c; }
+  }
+  return best.name;
+}
+
+// Похож ли предмет на искомый цвет: смотрим все его доминирующие цвета
+function itemMatchesColor(item, hex, tolerance = 0.13) {
+  if (!item.colors || !item.colors.length) return false;
+  return item.colors.some(c => c.ratio > 0.05 && colorDist(c.hex, hex) <= tolerance);
+}
+
+/* ===== bgs.js ===== */
+// Фоны для карточек вещей и для холста образов.
+const BGS = [
+  { id: 'none', name: 'Нет', css: '#ffffff', colors: ['#ffffff'] },
+  { id: 'cream', name: 'Крем', css: '#f7f1e8', colors: ['#f7f1e8'] },
+  { id: 'sand', name: 'Песок', css: '#ecdfcd', colors: ['#ecdfcd'] },
+  { id: 'clay', name: 'Глина', css: '#e3cbbd', colors: ['#e3cbbd'] },
+  { id: 'sage', name: 'Шалфей', css: '#d7e0d2', colors: ['#d7e0d2'] },
+  { id: 'sky', name: 'Небо', css: '#d6e4ef', colors: ['#d6e4ef'] },
+  { id: 'lilac', name: 'Лиловый', css: '#e2dcec', colors: ['#e2dcec'] },
+  { id: 'rose', name: 'Роза', css: '#f1dbdd', colors: ['#f1dbdd'] },
+  { id: 'graphite', name: 'Графит', css: '#3b3733', colors: ['#3b3733'] },
+  { id: 'g-warm', name: 'Закат', css: 'linear-gradient(160deg,#f6d9c4,#e8b39a)', colors: ['#f6d9c4', '#e8b39a'] },
+  { id: 'g-cool', name: 'Утро', css: 'linear-gradient(160deg,#e3ecf5,#c6d5e6)', colors: ['#e3ecf5', '#c6d5e6'] },
+  { id: 'g-night', name: 'Ночь', css: 'linear-gradient(160deg,#4a4560,#2a2738)', colors: ['#4a4560', '#2a2738'] }
+];
+
+const bgById = id => BGS.find(b => b.id === id) || BGS[0];
+const bgCss = id => bgById(id).css;
+
+/* ===== state.js ===== */
+// Единое состояние приложения + персистентность в IndexedDB.
+
+const state = {
+  items: [], outfits: [], collections: [], cats: [], calendar: [], trips: []
+};
+
+const listeners = new Set();
+const subscribe = fn => { listeners.add(fn); return () => listeners.delete(fn); };
+const emit = () => listeners.forEach(f => f());
+
+const DEFAULT_CATS = [
+  { name: 'Верх', icon: '👕', subs: ['Футболки', 'Рубашки', 'Свитеры', 'Топы', 'Худи'] },
+  { name: 'Низ', icon: '👖', subs: ['Джинсы', 'Брюки', 'Юбки', 'Шорты'] },
+  { name: 'Платья', icon: '👗', subs: ['Повседневные', 'Вечерние', 'Комбинезоны'] },
+  { name: 'Верхняя одежда', icon: '🧥', subs: ['Куртки', 'Пальто', 'Пиджаки', 'Жилеты'] },
+  { name: 'Обувь', icon: '👟', subs: ['Кроссовки', 'Ботинки', 'Туфли', 'Сандалии'] },
+  { name: 'Аксессуары', icon: '👜', subs: ['Сумки', 'Головные уборы', 'Ремни', 'Очки', 'Шарфы'] },
+  { name: 'Украшения', icon: '💍', subs: ['Серьги', 'Цепочки', 'Браслеты', 'Кольца'] },
+  { name: 'Спорт', icon: '🏃', subs: ['Верх', 'Низ', 'Обувь'] }
+];
+
+async function loadAll() {
+  const [items, outfits, collections, cats, calendar, trips] = await Promise.all(
+    ['items', 'outfits', 'collections', 'cats', 'calendar', 'trips'].map(dbAll)
+  );
+  state.items = items.sort((a, b) => b.createdAt - a.createdAt);
+  state.outfits = outfits.sort((a, b) => b.createdAt - a.createdAt);
+  state.collections = collections;
+  state.calendar = calendar;
+  state.trips = trips.sort((a, b) => b.createdAt - a.createdAt);
+
+  if (!cats.length) {
+    state.cats = DEFAULT_CATS.map((c, i) => ({
+      id: uid('c'), name: c.name, icon: c.icon, order: i, custom: false,
+      subs: c.subs.map(s => ({ id: uid('s'), name: s }))
+    }));
+    await Promise.all(state.cats.map(c => dbPut('cats', c)));
+  } else {
+    state.cats = cats.sort((a, b) => a.order - b.order);
+  }
+}
+
+/* ---------- items ---------- */
+async function saveItem(item) {
+  const idx = state.items.findIndex(i => i.id === item.id);
+  if (idx >= 0) state.items[idx] = item; else state.items.unshift(item);
+  await dbPut('items', item);
+  emit();
+  return item;
+}
+async function deleteItem(id) {
+  state.items = state.items.filter(i => i.id !== id);
+  // подчищаем ссылки
+  for (const o of state.outfits) {
+    if (o.layers.some(l => l.itemId === id)) {
+      o.layers = o.layers.filter(l => l.itemId !== id);
+      await dbPut('outfits', o);
+    }
+  }
+  for (const d of state.calendar) {
+    if (d.itemIds?.includes(id)) { d.itemIds = d.itemIds.filter(x => x !== id); await dbPut('calendar', d); }
+  }
+  for (const t of state.trips) {
+    if (t.itemIds?.includes(id)) { t.itemIds = t.itemIds.filter(x => x !== id); await dbPut('trips', t); }
+  }
+  await dbDel('items', id);
+  emit();
+}
+const itemById = id => state.items.find(i => i.id === id);
+
+/* ---------- outfits ---------- */
+async function saveOutfit(o) {
+  const idx = state.outfits.findIndex(x => x.id === o.id);
+  if (idx >= 0) state.outfits[idx] = o; else state.outfits.unshift(o);
+  await dbPut('outfits', o);
+  emit();
+  return o;
+}
+async function deleteOutfit(id) {
+  state.outfits = state.outfits.filter(o => o.id !== id);
+  for (const d of state.calendar) {
+    if (d.outfitIds?.includes(id)) { d.outfitIds = d.outfitIds.filter(x => x !== id); await dbPut('calendar', d); }
+  }
+  for (const t of state.trips) {
+    if (t.outfitIds?.includes(id)) { t.outfitIds = t.outfitIds.filter(x => x !== id); await dbPut('trips', t); }
+  }
+  await dbDel('outfits', id);
+  emit();
+}
+const outfitById = id => state.outfits.find(o => o.id === id);
+
+/* ---------- collections (Style Book) ---------- */
+async function saveCollection(c) {
+  const idx = state.collections.findIndex(x => x.id === c.id);
+  if (idx >= 0) state.collections[idx] = c; else state.collections.push(c);
+  await dbPut('collections', c);
+  emit();
+  return c;
+}
+async function deleteCollection(id) {
+  state.collections = state.collections.filter(c => c.id !== id);
+  for (const o of state.outfits) {
+    if (o.collectionId === id) { o.collectionId = null; await dbPut('outfits', o); }
+  }
+  await dbDel('collections', id);
+  emit();
+}
+
+/* ---------- categories ---------- */
+async function saveCat(c) {
+  const idx = state.cats.findIndex(x => x.id === c.id);
+  if (idx >= 0) state.cats[idx] = c; else state.cats.push(c);
+  await dbPut('cats', c);
+  emit();
+  return c;
+}
+async function deleteCat(id) {
+  state.cats = state.cats.filter(c => c.id !== id);
+  for (const it of state.items) {
+    if (it.catId === id) { it.catId = null; it.subId = null; await dbPut('items', it); }
+  }
+  await dbDel('cats', id);
+  emit();
+}
+const catById = id => state.cats.find(c => c.id === id);
+function subById(catId, subId) {
+  return catById(catId)?.subs.find(s => s.id === subId) || null;
+}
+const countInCat = id => state.items.filter(i => i.catId === id).length;
+
+/* ---------- calendar ---------- */
+async function saveDay(day) {
+  const idx = state.calendar.findIndex(d => d.id === day.id);
+  if (idx >= 0) state.calendar[idx] = day; else state.calendar.push(day);
+  await dbPut('calendar', day);
+  emit();
+  return day;
+}
+const dayByDate = date => state.calendar.find(d => d.id === date);
+
+/* ---------- trips ---------- */
+async function saveTrip(t) {
+  const idx = state.trips.findIndex(x => x.id === t.id);
+  if (idx >= 0) state.trips[idx] = t; else state.trips.unshift(t);
+  await dbPut('trips', t);
+  emit();
+  return t;
+}
+async function deleteTrip(id) {
+  state.trips = state.trips.filter(t => t.id !== id);
+  await dbDel('trips', id);
+  emit();
+}
+const tripById = id => state.trips.find(t => t.id === id);
+
+/* ===== editor.js ===== */
+// Редактор изображения вещи: ML-удаление фона + ручные инструменты (волшебная палочка,
+// ластик, восстановление, прямоугольный и свободный кроп).
+
+const IMGLY_URL = 'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.8/+esm';
+const MAX_SIDE = 1400;
+let mlModule = null;   // кэшируем модуль между вызовами
+
+function imageFromBlob(blob) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.onerror = rej;
+    img.src = typeof blob === 'string' ? blob : URL.createObjectURL(blob);
+  });
+}
+
+const canvasToBlob = (c, type = 'image/png') =>
+  new Promise(res => c.toBlob(res, type, 0.92));
+
+/** Обрезает прозрачные поля вокруг вещи. */
+function trimTransparent(src) {
+  const ctx = src.getContext('2d', { willReadFrequently: true });
+  const { width: w, height: h2 } = src;
+  const d = ctx.getImageData(0, 0, w, h2).data;
+  let minX = w, minY = h2, maxX = -1, maxY = -1;
+  for (let y = 0; y < h2; y++) {
+    for (let x = 0; x < w; x++) {
+      if (d[(y * w + x) * 4 + 3] > 12) {
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxX < 0) return src;
+  const pad = Math.round(Math.max(maxX - minX, maxY - minY) * 0.03);
+  minX = Math.max(0, minX - pad); minY = Math.max(0, minY - pad);
+  maxX = Math.min(w - 1, maxX + pad); maxY = Math.min(h2 - 1, maxY + pad);
+  const out = document.createElement('canvas');
+  out.width = maxX - minX + 1; out.height = maxY - minY + 1;
+  out.getContext('2d').drawImage(src, minX, minY, out.width, out.height, 0, 0, out.width, out.height);
+  return out;
+}
+
+/**
+ * Открывает редактор. Возвращает Promise<Blob|null> — PNG с прозрачным фоном.
+ * @param {Blob|string} source исходное изображение
+ * @param {boolean} autoAI сразу запустить ML-удаление фона
+ */
+async function openImageEditor(source, { autoAI = false } = {}) {
+  const img = await imageFromBlob(source);
+
+  // рабочий холст (ограничиваем размер — иначе тормозит на телефоне)
+  const scale = Math.min(1, MAX_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
+  const W = Math.round(img.naturalWidth * scale), H = Math.round(img.naturalHeight * scale);
+
+  const orig = document.createElement('canvas');
+  orig.width = W; orig.height = H;
+  orig.getContext('2d').drawImage(img, 0, 0, W, H);
+
+  let work = document.createElement('canvas');
+  work.width = W; work.height = H;
+  work.getContext('2d', { willReadFrequently: true }).drawImage(orig, 0, 0);
+
+  const history = [];
+  const pushHistory = () => {
+    if (history.length > 7) history.shift();
+    const c = document.createElement('canvas');
+    c.width = work.width; c.height = work.height;
+    c.getContext('2d').drawImage(work, 0, 0);
+    history.push(c);
+    updateChrome();
+  };
+
+  /* ---------- разметка ---------- */
+  const canvas = h('canvas', { id: 'ed-canvas' });
+  const wrap = h('div', { id: 'ed-wrap' }, canvas);
+  const opts = h('div', { class: 'tool-opts' });
+  const toolbar = h('div', { class: 'tools' });
+
+  let tool = 'wand';
+  let tolerance = 0.18, brush = 34;
+
+  const TOOLS = [
+    { id: 'ai', ic: '✨', label: 'ИИ-фон', action: runAI },
+    { id: 'wand', ic: '🪄', label: 'Палочка' },
+    { id: 'erase', ic: '🧽', label: 'Ластик' },
+    { id: 'restore', ic: '↩️', label: 'Вернуть' },
+    { id: 'crop', ic: '⬛', label: 'Кроп' },
+    { id: 'lasso', ic: '✂️', label: 'Лассо' },
+    { id: 'undo', ic: '⟲', label: 'Отменить', action: undo },
+    { id: 'reset', ic: '⟳', label: 'Сброс', action: reset }
+  ];
+
+  function renderToolbar() {
+    fill(toolbar, ...TOOLS.map(t =>
+      h('button', {
+        class: 'tool' + (tool === t.id ? ' active' : ''),
+        onclick: () => {
+          if (t.action) { t.action(); return; }
+          tool = t.id; cropRect = null; renderToolbar(); renderOpts(); render();
+        }
+      }, h('span', { class: 'ic' }, t.ic), h('span', {}, t.label))
+    ));
+  }
+
+  function renderOpts() {
+    opts.replaceChildren();
+    if (tool === 'wand') {
+      const r = h('input', { type: 'range', min: 2, max: 60, value: Math.round(tolerance * 100), oninput: e => { tolerance = e.target.value / 100; lbl.textContent = `Чувствительность: ${e.target.value}%`; } });
+      const lbl = h('div', { class: 'muted small' }, `Чувствительность: ${Math.round(tolerance * 100)}%`);
+      opts.append(lbl, r, h('div', { class: 'muted small' }, 'Нажмите на фон — область удалится.'));
+    } else if (tool === 'erase' || tool === 'restore') {
+      const lbl = h('div', { class: 'muted small' }, `Кисть: ${brush} px`);
+      opts.append(lbl, h('input', { type: 'range', min: 6, max: 140, value: brush, oninput: e => { brush = +e.target.value; lbl.textContent = `Кисть: ${brush} px`; } }));
+    } else if (tool === 'crop') {
+      opts.append(h('div', { class: 'row' },
+        h('span', { class: 'muted small spacer' }, 'Выделите прямоугольник'),
+        h('button', { class: 'btn btn-sm primary', onclick: applyCrop }, 'Применить')));
+    } else if (tool === 'lasso') {
+      opts.append(h('div', { class: 'muted small' }, 'Обведите вещь пальцем — всё снаружи удалится.'));
+    }
+  }
+
+  const doneBtn = h('button', { class: 'btn primary', onclick: finish }, 'Готово');
+  let resolveFn;
+  const modal = openModal({
+    title: 'Обработка фото',
+    full: true,
+    body: h('div', { style: { display: 'flex', flexDirection: 'column', height: '100%', margin: '-12px' } }, wrap, opts, toolbar),
+    foot: [h('button', { class: 'btn', onclick: () => { modal.close(); } }, 'Отмена'), doneBtn],
+    onClose: () => resolveFn && resolveFn(null)
+  });
+
+  function updateChrome() {
+    const u = TOOLS.find(t => t.id === 'undo');
+    const btn = [...toolbar.children][TOOLS.indexOf(u)];
+    if (btn) btn.disabled = history.length === 0;
+  }
+
+  /* ---------- отрисовка ---------- */
+  let cropRect = null, lassoPts = null, hoverPt = null;
+  function render() {
+    canvas.width = work.width; canvas.height = work.height;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(work, 0, 0);
+    if (cropRect) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,.35)';
+      ctx.beginPath();
+      ctx.rect(0, 0, canvas.width, canvas.height);
+      ctx.rect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
+      ctx.fill('evenodd');
+      ctx.strokeStyle = '#c1785c'; ctx.lineWidth = 3;
+      ctx.strokeRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
+      ctx.restore();
+    }
+    if (lassoPts && lassoPts.length > 1) {
+      ctx.save();
+      ctx.strokeStyle = '#c1785c'; ctx.lineWidth = 3; ctx.setLineDash([8, 6]);
+      ctx.beginPath();
+      ctx.moveTo(lassoPts[0].x, lassoPts[0].y);
+      lassoPts.forEach(p => ctx.lineTo(p.x, p.y));
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (hoverPt && (tool === 'erase' || tool === 'restore')) {
+      ctx.save();
+      ctx.strokeStyle = tool === 'erase' ? '#d94f45' : '#4f8a5b'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(hoverPt.x, hoverPt.y, brush / 2, 0, 7); ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  /* ---------- ввод ---------- */
+  const toWork = e => {
+    const r = canvas.getBoundingClientRect();
+    return {
+      x: (e.clientX - r.left) * canvas.width / r.width,
+      y: (e.clientY - r.top) * canvas.height / r.height
+    };
+  };
+
+  let drawing = false, last = null, startPt = null;
+
+  canvas.addEventListener('pointerdown', e => {
+    try { canvas.setPointerCapture(e.pointerId); } catch (_) { }
+    const p = toWork(e);
+    if (tool === 'wand') { pushHistory(); magicWand(p.x | 0, p.y | 0); render(); return; }
+    drawing = true; last = p; startPt = p;
+    if (tool === 'erase' || tool === 'restore') { pushHistory(); paint(p, p); render(); }
+    if (tool === 'lasso') { pushHistory(); lassoPts = [p]; }
+    if (tool === 'crop') cropRect = { x: p.x, y: p.y, w: 0, h: 0 };
+  });
+
+  canvas.addEventListener('pointermove', e => {
+    const p = toWork(e);
+    hoverPt = p;
+    if (!drawing) { if (tool === 'erase' || tool === 'restore') render(); return; }
+    if (tool === 'erase' || tool === 'restore') { paint(last, p); last = p; render(); }
+    else if (tool === 'lasso') { lassoPts.push(p); render(); }
+    else if (tool === 'crop') {
+      cropRect = {
+        x: Math.min(startPt.x, p.x), y: Math.min(startPt.y, p.y),
+        w: Math.abs(p.x - startPt.x), h: Math.abs(p.y - startPt.y)
+      };
+      render();
+    }
+  });
+
+  canvas.addEventListener('pointerup', () => {
+    if (drawing && tool === 'lasso' && lassoPts && lassoPts.length > 4) applyLasso();
+    drawing = false; last = null;
+  });
+  canvas.addEventListener('pointerleave', () => { hoverPt = null; render(); });
+
+  /* ---------- инструменты ---------- */
+  function paint(from, to) {
+    const ctx = work.getContext('2d');
+    const r = brush / 2;
+    const dist = Math.hypot(to.x - from.x, to.y - from.y);
+    const steps = Math.max(1, Math.ceil(dist / (r / 2)));
+    for (let i = 0; i <= steps; i++) {
+      const x = from.x + (to.x - from.x) * i / steps;
+      const y = from.y + (to.y - from.y) * i / steps;
+      ctx.save();
+      ctx.beginPath(); ctx.arc(x, y, r, 0, 7);
+      if (tool === 'erase') {
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.fill();
+      } else {
+        ctx.clip();
+        ctx.drawImage(orig, 0, 0);
+      }
+      ctx.restore();
+    }
+  }
+
+  // Заливка по клику: убираем связную область близкого цвета (аналог "Tap Background")
+  function magicWand(sx, sy) {
+    const ctx = work.getContext('2d', { willReadFrequently: true });
+    const w = work.width, hgt = work.height;
+    const img = ctx.getImageData(0, 0, w, hgt);
+    const d = img.data;
+    const idx = (sy * w + sx) * 4;
+    if (d[idx + 3] === 0) return;
+    const sr = d[idx], sg = d[idx + 1], sb = d[idx + 2];
+    const thr = tolerance * 255 * 1.732;
+    const seen = new Uint8Array(w * hgt);
+    const stack = [sy * w + sx];
+    seen[sy * w + sx] = 1;
+    let count = 0;
+    while (stack.length) {
+      const p = stack.pop();
+      const i4 = p * 4;
+      const dr = d[i4] - sr, dg = d[i4 + 1] - sg, db = d[i4 + 2] - sb;
+      if (Math.sqrt(dr * dr + dg * dg + db * db) > thr) continue;
+      d[i4 + 3] = 0;
+      count++;
+      const x = p % w, y = (p / w) | 0;
+      if (x > 0 && !seen[p - 1]) { seen[p - 1] = 1; stack.push(p - 1); }
+      if (x < w - 1 && !seen[p + 1]) { seen[p + 1] = 1; stack.push(p + 1); }
+      if (y > 0 && !seen[p - w]) { seen[p - w] = 1; stack.push(p - w); }
+      if (y < hgt - 1 && !seen[p + w]) { seen[p + w] = 1; stack.push(p + w); }
+    }
+    ctx.putImageData(img, 0, 0);
+    if (!count) toast('Здесь нечего удалять');
+  }
+
+  function applyCrop() {
+    if (!cropRect || cropRect.w < 8 || cropRect.h < 8) { toast('Сначала выделите область'); return; }
+    pushHistory();
+    const out = document.createElement('canvas');
+    out.width = Math.round(cropRect.w); out.height = Math.round(cropRect.h);
+    out.getContext('2d').drawImage(work, Math.round(cropRect.x), Math.round(cropRect.y),
+      out.width, out.height, 0, 0, out.width, out.height);
+    work = out;
+    cropRect = null;
+    render();
+  }
+
+  function applyLasso() {
+    const mask = document.createElement('canvas');
+    mask.width = work.width; mask.height = work.height;
+    const mc = mask.getContext('2d');
+    mc.beginPath();
+    mc.moveTo(lassoPts[0].x, lassoPts[0].y);
+    lassoPts.forEach(p => mc.lineTo(p.x, p.y));
+    mc.closePath();
+    mc.fillStyle = '#fff'; mc.fill();
+    const ctx = work.getContext('2d');
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-in';
+    ctx.drawImage(mask, 0, 0);
+    ctx.restore();
+    lassoPts = null;
+    render();
+  }
+
+  async function runAI() {
+    toast('ИИ-вырезание недоступно в веб-демо — уберите фон «Палочкой»', 3800);
+    return;
+    busy(true, mlModule ? 'Удаляю фон…' : 'Загружаю ИИ-модель (~40 МБ, только первый раз)…');
+    try {
+      if (!mlModule) mlModule = await import(/* @vite-ignore */ IMGLY_URL);
+      const fn = mlModule.removeBackground || mlModule.default;
+      const srcBlob = await canvasToBlob(work);
+      const outBlob = await fn(srcBlob, {
+        output: { format: 'image/png', quality: 0.9 },
+        progress: (key, cur, total) => {
+          if (key.startsWith('fetch')) busy(true, `Загружаю модель: ${Math.round(cur / total * 100)}%`);
+          else busy(true, 'Удаляю фон…');
+        }
+      });
+      const outImg = await imageFromBlob(outBlob);
+      pushHistory();
+      const ctx = work.getContext('2d');
+      ctx.clearRect(0, 0, work.width, work.height);
+      ctx.drawImage(outImg, 0, 0, work.width, work.height);
+      render();
+      toast('Фон удалён');
+    } catch (err) {
+      console.error(err);
+      toast('ИИ недоступен — используйте «Палочку»', 3200);
+    } finally {
+      busy(false);
+    }
+  }
+
+  function undo() {
+    const prev = history.pop();
+    if (!prev) return;
+    work = prev;
+    cropRect = null; lassoPts = null;
+    render(); updateChrome();
+  }
+
+  function reset() {
+    pushHistory();
+    work = document.createElement('canvas');
+    work.width = W; work.height = H;
+    work.getContext('2d', { willReadFrequently: true }).drawImage(orig, 0, 0);
+    cropRect = null; lassoPts = null;
+    render();
+  }
+
+  async function finish() {
+    doneBtn.disabled = true;
+    const trimmed = trimTransparent(work);
+    const blob = await canvasToBlob(trimmed);
+    const r = resolveFn; resolveFn = null;
+    modal.close();
+    r(blob);
+  }
+
+  renderToolbar(); renderOpts(); render(); updateChrome();
+  if (autoAI) setTimeout(runAI, 120);
+
+  return new Promise(res => { resolveFn = res; });
+}
+
+/* ===== capture.js ===== */
+// Источники изображений: галерея, камера, а также «пипетка» цвета с камеры.
+
+function pickImageFile() {
+  return new Promise(res => {
+    const input = qs('#file-input');
+    const onChange = () => {
+      input.removeEventListener('change', onChange);
+      const f = input.files && input.files[0];
+      input.value = '';
+      res(f || null);
+    };
+    input.addEventListener('change', onChange);
+    input.click();
+  });
+}
+
+async function startStream(video) {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } }, audio: false
+  });
+  video.srcObject = stream;
+  await video.play();
+  return stream;
+}
+
+function cameraUnavailable(err) {
+  console.warn(err);
+  toast('Камера недоступна в веб-демо — добавьте фото из галереи', 3600);
+}
+
+/** Снимок вещи камерой. Возвращает Blob|null. */
+function captureFromCamera() {
+  return new Promise(async res => {
+    const video = h('video', { id: 'cam', playsinline: true, muted: true });
+    let stream = null, done = false;
+    const modal = openModal({
+      title: 'Снять вещь',
+      body: h('div', {}, video, h('p', { class: 'muted small center' }, 'Положите вещь на однотонный фон — фон потом уберём.')),
+      foot: [
+        h('button', { class: 'btn', onclick: () => modal.close() }, 'Отмена'),
+        h('button', {
+          class: 'btn primary', onclick: () => {
+            const c = document.createElement('canvas');
+            c.width = video.videoWidth; c.height = video.videoHeight;
+            c.getContext('2d').drawImage(video, 0, 0);
+            c.toBlob(b => { done = true; stop(); modal.close(); res(b); }, 'image/png');
+          }
+        }, '📸 Снять')
+      ],
+      onClose: () => { stop(); if (!done) res(null); }
+    });
+    function stop() { stream?.getTracks().forEach(t => t.stop()); }
+    try { stream = await startStream(video); }
+    catch (e) { cameraUnavailable(e); modal.close(); }
+  });
+}
+
+/** Пипетка: наводим камеру, тапаем по кадру — получаем hex. */
+function scanColorFromCamera() {
+  return new Promise(async res => {
+    const video = h('video', { id: 'cam', playsinline: true, muted: true });
+    const sw = h('div', { class: 'swatch', style: { width: '54px', height: '54px', background: '#ffffff' } });
+    const label = h('b', {}, '—');
+    let picked = null, stream = null, done = false;
+
+    video.addEventListener('click', e => {
+      const r = video.getBoundingClientRect();
+      const c = document.createElement('canvas');
+      c.width = video.videoWidth; c.height = video.videoHeight;
+      const ctx = c.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(video, 0, 0);
+      const x = Math.round((e.clientX - r.left) * c.width / r.width);
+      const y = Math.round((e.clientY - r.top) * c.height / r.height);
+      // усредняем 9x9 — так цвет стабильнее
+      const d = ctx.getImageData(Math.max(0, x - 4), Math.max(0, y - 4), 9, 9).data;
+      let R = 0, G = 0, B = 0, n = 0;
+      for (let i = 0; i < d.length; i += 4) { R += d[i]; G += d[i + 1]; B += d[i + 2]; n++; }
+      picked = rgbToHex(R / n, G / n, B / n);
+      sw.style.background = picked;
+      label.textContent = picked.toUpperCase();
+    });
+
+    const modal = openModal({
+      title: 'Сканировать цвет',
+      body: h('div', {}, video,
+        h('p', { class: 'muted small center' }, 'Тапните по кадру, чтобы взять цвет'),
+        h('div', { class: 'row', style: { justifyContent: 'center', gap: '12px' } }, sw, label)),
+      foot: [
+        h('button', { class: 'btn', onclick: () => modal.close() }, 'Отмена'),
+        h('button', { class: 'btn primary', onclick: () => { if (!picked) return toast('Сначала тапните по кадру'); done = true; stop(); modal.close(); res(picked); } }, 'Искать')
+      ],
+      onClose: () => { stop(); if (!done) res(null); }
+    });
+    function stop() { stream?.getTracks().forEach(t => t.stop()); }
+    try { stream = await startStream(video); }
+    catch (e) { cameraUnavailable(e); modal.close(); }
+  });
+}
+
+/* ===== picker.js ===== */
+// Универсальный выбор вещей / образов (для образов, календаря, чемодана).
+
+function pickItems({ title = 'Выбрать вещи', selected = [], multi = true } = {}) {
+  return new Promise(res => {
+    let sel = new Set(selected);
+    let catId = null;
+    let done = false;
+
+    const grid = h('div', { class: 'grid' });
+    const chips = h('div', { class: 'chips' });
+
+    function renderChips() {
+      fill(chips, 
+        h('button', { class: 'chip' + (!catId ? ' active' : ''), onclick: () => { catId = null; renderChips(); renderGrid(); } }, 'Все'),
+        ...state.cats.filter(c => state.items.some(i => i.catId === c.id)).map(c =>
+          h('button', {
+            class: 'chip' + (catId === c.id ? ' active' : ''),
+            onclick: () => { catId = c.id; renderChips(); renderGrid(); }
+          }, `${c.icon || ''} ${c.name}`))
+      );
+    }
+    function renderGrid() {
+      const list = state.items.filter(i => !catId || i.catId === catId);
+      fill(grid, ...list.map(it => h('div', {
+        class: 'tile' + (sel.has(it.id) ? ' sel' : ''),
+        style: { background: bgCss(it.bg) },
+        onclick: () => {
+          if (multi) { sel.has(it.id) ? sel.delete(it.id) : sel.add(it.id); renderGrid(); }
+          else { done = true; modal.close(); res([it.id]); }
+        }
+      }, h('img', { src: urlFor(it.img) }))));
+      if (!list.length) fill(grid, h('div', { class: 'empty' }, 'Нет вещей'));
+    }
+    renderChips(); renderGrid();
+
+    const modal = openModal({
+      title, full: true,
+      body: h('div', {}, chips, grid),
+      foot: multi ? [
+        h('button', { class: 'btn', onclick: () => modal.close() }, 'Отмена'),
+        h('button', { class: 'btn primary', onclick: () => { done = true; modal.close(); res([...sel]); } }, 'Готово')
+      ] : null,
+      onClose: () => { if (!done) res(null); }
+    });
+  });
+}
+
+function pickOutfits({ title = 'Выбрать образы', selected = [], multi = true } = {}) {
+  return new Promise(res => {
+    let sel = new Set(selected);
+    let done = false;
+    const grid = h('div', { class: 'grid g2' });
+    function renderGrid() {
+      fill(grid, ...state.outfits.map(o => h('div', {
+        class: 'tile' + (sel.has(o.id) ? ' sel' : ''),
+        onclick: () => {
+          if (multi) { sel.has(o.id) ? sel.delete(o.id) : sel.add(o.id); renderGrid(); }
+          else { done = true; modal.close(); res([o.id]); }
+        }
+      }, h('img', { src: urlFor(o.preview) }), h('span', { class: 'lbl' }, o.name || 'Образ'))));
+      if (!state.outfits.length) fill(grid, h('div', { class: 'empty' }, 'Образов пока нет'));
+    }
+    renderGrid();
+    const modal = openModal({
+      title, full: true, body: grid,
+      foot: multi ? [
+        h('button', { class: 'btn', onclick: () => modal.close() }, 'Отмена'),
+        h('button', { class: 'btn primary', onclick: () => { done = true; modal.close(); res([...sel]); } }, 'Готово')
+      ] : null,
+      onClose: () => { if (!done) res(null); }
+    });
+  });
+}
+
+/* ===== closet.js ===== */
+// Вкладка «Гардероб»: категории, подкатегории, фильтр по цвету, сортировка, карточка вещи.
+
+const filters = { catId: null, subId: null, color: null, sort: 'new', favOnly: false };
+
+/* ---------- добавление вещи ---------- */
+async function addItemFlow(sourceBlob, preset = {}) {
+  const blob = await openImageEditor(sourceBlob, { autoAI: preset.autoAI !== false });
+  if (!blob) return null;
+  busy(true, 'Анализирую цвета…');
+  let colors = [];
+  try {
+    const img = await imageFromBlob(blob);
+    colors = extractPalette(img, 5);
+  } catch (e) { console.warn(e); }
+  busy(false);
+
+  const item = {
+    id: uid('it'),
+    name: preset.name || '',
+    catId: preset.catId ?? filters.catId ?? state.cats[0]?.id ?? null,
+    subId: preset.subId ?? null,
+    img: blob,
+    colors,
+    bg: 'none',
+    fav: false,
+    source: preset.source || 'photo',
+    createdAt: Date.now()
+  };
+  const saved = await openItemForm(item, true);
+  return saved;
+}
+
+async function startAddItem() {
+  const src = await actionSheet('Добавить вещь', [
+    { id: 'cam', icon: '📸', label: 'Сделать фото' },
+    { id: 'file', icon: '🖼', label: 'Выбрать из галереи' }
+  ]);
+  if (!src) return;
+  const blob = src === 'cam' ? await captureFromCamera() : await pickImageFile();
+  if (!blob) return;
+  await addItemFlow(blob);
+}
+
+/* ---------- форма вещи ---------- */
+function openItemForm(item, isNew = false) {
+  return new Promise(res => {
+    let resolved = false;
+    const nameInput = h('input', { type: 'text', value: item.name, placeholder: 'Например, белая рубашка' });
+
+    const subSel = h('select', {});
+    const catSel = h('select', {
+      onchange: () => { item.catId = catSel.value; fillSubs(); }
+    }, state.cats.map(c => h('option', { value: c.id, selected: c.id === item.catId }, `${c.icon || ''} ${c.name}`)));
+
+    function fillSubs() {
+      const cat = catById(catSel.value);
+      fill(subSel, 
+        h('option', { value: '' }, '— без подкатегории —'),
+        ...(cat?.subs || []).map(s => h('option', { value: s.id, selected: s.id === item.subId }, s.name))
+      );
+    }
+    fillSubs();
+
+    const preview = h('div', {
+      class: 'tile', style: { aspectRatio: '1', maxWidth: '190px', margin: '0 auto 12px', background: bgCss(item.bg) }
+    }, h('img', { src: urlFor(item.img) }));
+
+    const bgRow = h('div', { class: 'palette-row' }, BGS.map(b =>
+      h('button', {
+        class: 'swatch' + (item.bg === b.id ? ' sel' : ''),
+        style: { background: b.css, border: b.id === 'none' ? '1px dashed #bbb' : '' },
+        title: b.name,
+        onclick: e => {
+          item.bg = b.id;
+          preview.style.background = b.css;
+          [...bgRow.children].forEach(x => x.classList.remove('sel'));
+          e.currentTarget.classList.add('sel');
+        }
+      })
+    ));
+
+    const colorsRow = h('div', { class: 'row', style: { gap: '6px', flexWrap: 'wrap' } },
+      (item.colors || []).map(c => h('div', { class: 'row', style: { gap: '4px' } },
+        h('span', { class: 'dot', style: { background: c.hex, width: '18px', height: '18px' } }),
+        h('span', { class: 'small muted' }, `${colorName(c.hex)} ${Math.round(c.ratio * 100)}%`)))
+    );
+
+    const modal = openModal({
+      title: isNew ? 'Новая вещь' : 'Редактировать',
+      body: h('div', {},
+        preview,
+        h('div', { class: 'section-title' }, 'Фон карточки'), bgRow,
+        h('label', { class: 'field' }, h('span', {}, 'Название'), nameInput),
+        h('label', { class: 'field' }, h('span', {}, 'Категория'), catSel),
+        h('label', { class: 'field' }, h('span', {}, 'Подкатегория'), subSel),
+        h('div', { class: 'section-title' }, 'Цвета вещи'), colorsRow,
+        h('button', {
+          class: 'btn block', style: { marginTop: '14px' }, onclick: async () => {
+            const blob = await openImageEditor(item.img, { autoAI: false });
+            if (!blob) return;
+            item.img = blob;
+            preview.querySelector('img').src = urlFor(blob);
+            try { item.colors = extractPalette(await imageFromBlob(blob), 5); } catch (e) { }
+          }
+        }, '✂️ Переобработать фото')
+      ),
+      foot: [
+        h('button', { class: 'btn', onclick: () => modal.close() }, 'Отмена'),
+        h('button', {
+          class: 'btn primary', onclick: async () => {
+            item.name = nameInput.value.trim() || (item.colors?.[0] ? colorName(item.colors[0].hex) + ' вещь' : 'Без названия');
+            item.catId = catSel.value || null;
+            item.subId = subSel.value || null;
+            await saveItem(item);
+            resolved = true;
+            modal.close();
+            toast(isNew ? 'Вещь добавлена' : 'Сохранено');
+            res(item);
+          }
+        }, 'Сохранить')
+      ],
+      onClose: () => { if (!resolved) res(null); }
+    });
+  });
+}
+
+/* ---------- карточка вещи ---------- */
+function openItemCard(item) {
+  const modal = openModal({
+    title: item.name || 'Вещь',
+    body: h('div', {},
+      h('div', {
+        class: 'tile', style: { aspectRatio: '1', background: bgCss(item.bg), marginBottom: '12px' }
+      }, h('img', { src: urlFor(item.img) })),
+      h('div', { class: 'lrow' },
+        h('div', { class: 't' },
+          h('b', {}, item.name || '—'),
+          h('span', {}, [catById(item.catId)?.name, subById(item.catId, item.subId)?.name].filter(Boolean).join(' › ') || 'Без категории'))
+      ),
+      h('div', { class: 'section-title' }, 'Цвета'),
+      h('div', { class: 'row', style: { gap: '6px', flexWrap: 'wrap' } },
+        (item.colors || []).map(c => h('div', {
+          class: 'chip', onclick: () => { filters.color = c.hex; modal.close(); emit(); }
+        }, h('span', { class: 'dot', style: { background: c.hex } }), colorName(c.hex)))
+      )
+    ),
+    foot: [
+      h('button', {
+        class: 'btn', onclick: async () => { item.fav = !item.fav; await saveItem(item); toast(item.fav ? 'В избранном' : 'Убрано'); modal.close(); }
+      }, item.fav ? '★ Избранное' : '☆ В избранное'),
+      h('button', { class: 'btn', onclick: async () => { modal.close(); await openItemForm(item); } }, '✎ Изменить'),
+      h('button', {
+        class: 'btn danger', onclick: async () => {
+          if (await confirmDialog('Удалить вещь из гардероба?')) { await deleteItem(item.id); modal.close(); toast('Удалено'); }
+        }
+      }, '🗑')
+    ]
+  });
+}
+
+/* ---------- фильтрация ---------- */
+function filteredItems() {
+  let list = state.items.slice();
+  if (filters.catId) list = list.filter(i => i.catId === filters.catId);
+  if (filters.subId) list = list.filter(i => i.subId === filters.subId);
+  if (filters.favOnly) list = list.filter(i => i.fav);
+  if (filters.color) list = list.filter(i => itemMatchesColor(i, filters.color));
+  const hue = i => {
+    const c = i.colors?.[0]?.hex;
+    if (!c) return 999;
+    const [L, a, b] = oklab(...[1, 3, 5].map(k => parseInt(c.substr(k, 2), 16)));
+    return Math.atan2(b, a);
+  };
+  const sorters = {
+    new: (a, b) => b.createdAt - a.createdAt,
+    old: (a, b) => a.createdAt - b.createdAt,
+    name: (a, b) => (a.name || '').localeCompare(b.name || '', 'ru'),
+    color: (a, b) => hue(a) - hue(b)
+  };
+  return list.sort(sorters[filters.sort] || sorters.new);
+}
+
+/* ---------- палитра гардероба ---------- */
+function closetColors() {
+  // группируем цвета вещей по базовой палитре
+  const counts = new Map();
+  for (const it of state.items) {
+    const seen = new Set();
+    for (const c of it.colors || []) {
+      if (c.ratio < 0.08) continue;
+      const base = BASE_COLORS.find(bc => itemMatchesColor({ colors: [c] }, bc.hex, 0.13)) || null;
+      if (base && !seen.has(base.hex)) { seen.add(base.hex); counts.set(base.hex, (counts.get(base.hex) || 0) + 1); }
+    }
+  }
+  return BASE_COLORS.filter(c => counts.has(c.hex)).map(c => ({ ...c, n: counts.get(c.hex) }))
+    .sort((a, b) => b.n - a.n);
+}
+
+/* ---------- менеджер категорий ---------- */
+function openCategoryManager() {
+  const body = h('div', { class: 'list' });
+  const modal = openModal({ title: 'Категории', body, full: true });
+
+  function render() {
+    fill(body, 
+      ...state.cats.map(c => h('div', { class: 'lrow' },
+        h('div', { style: { fontSize: '22px' } }, c.icon || '📦'),
+        h('div', { class: 't' },
+          h('b', {}, c.name),
+          h('span', {}, `${countInCat(c.id)} вещей · ${c.subs.length} подкатегорий`)),
+        h('button', {
+          class: 'btn btn-sm', onclick: async () => {
+            const act = await actionSheet(c.name, [
+              { id: 'sub', icon: '➕', label: 'Добавить подкатегорию' },
+              { id: 'subs', icon: '📂', label: 'Подкатегории' },
+              { id: 'ren', icon: '✎', label: 'Переименовать' },
+              { id: 'del', icon: '🗑', label: 'Удалить категорию', danger: true }
+            ]);
+            if (act === 'sub') {
+              const n = await promptDialog('Новая подкатегория');
+              if (n) { c.subs.push({ id: uid('s'), name: n }); await saveCat(c); render(); }
+            } else if (act === 'subs') {
+              openSubManager(c, render);
+            } else if (act === 'ren') {
+              const n = await promptDialog('Переименовать', c.name);
+              if (n) { c.name = n; await saveCat(c); render(); }
+            } else if (act === 'del') {
+              if (await confirmDialog(`Удалить «${c.name}»? Вещи останутся, но потеряют категорию.`)) {
+                await deleteCat(c.id); render();
+              }
+            }
+          }
+        }, '⋯')
+      )),
+      h('button', {
+        class: 'btn block primary', style: { marginTop: '12px' }, onclick: async () => {
+          const n = await promptDialog('Новая категория');
+          if (!n) return;
+          await saveCat({ id: uid('c'), name: n, icon: '📦', order: state.cats.length, custom: true, subs: [] });
+          render();
+        }
+      }, '+ Добавить категорию')
+    );
+  }
+  render();
+}
+
+function openSubManager(cat, onDone) {
+  const body = h('div', { class: 'list' });
+  const modal = openModal({ title: cat.name, body, onClose: onDone });
+  function render() {
+    fill(body, 
+      ...cat.subs.map(s => h('div', { class: 'lrow' },
+        h('div', { class: 't' }, h('b', {}, s.name),
+          h('span', {}, state.items.filter(i => i.subId === s.id).length + ' вещей')),
+        h('button', {
+          class: 'btn btn-sm', onclick: async () => {
+            const n = await promptDialog('Переименовать', s.name);
+            if (n) { s.name = n; await saveCat(cat); render(); }
+          }
+        }, '✎'),
+        h('button', {
+          class: 'btn btn-sm danger', onclick: async () => {
+            cat.subs = cat.subs.filter(x => x.id !== s.id);
+            state.items.filter(i => i.subId === s.id).forEach(i => { i.subId = null; saveItem(i); });
+            await saveCat(cat); render();
+          }
+        }, '🗑')
+      )),
+      cat.subs.length ? null : h('p', { class: 'muted small' }, 'Пока пусто')
+    );
+  }
+  render();
+}
+
+/* ---------- рендер вкладки ---------- */
+function renderCloset(root) {
+  const cats = state.cats;
+  const cur = catById(filters.catId);
+  const palette = closetColors();
+
+  const catChips = h('div', { class: 'chips' },
+    h('button', {
+      class: 'chip' + (!filters.catId ? ' active' : ''),
+      onclick: () => { filters.catId = null; filters.subId = null; emit(); }
+    }, 'Все', h('span', { class: 'cnt' }, state.items.length)),
+    ...cats.map(c => h('button', {
+      class: 'chip' + (filters.catId === c.id ? ' active' : ''),
+      onclick: () => { filters.catId = c.id; filters.subId = null; emit(); }
+    }, `${c.icon || ''} ${c.name}`, h('span', { class: 'cnt' }, countInCat(c.id)))),
+    h('button', { class: 'chip', onclick: openCategoryManager }, '⚙️')
+  );
+
+  const subChips = cur && cur.subs.length ? h('div', { class: 'chips' },
+    h('button', {
+      class: 'chip' + (!filters.subId ? ' active' : ''),
+      onclick: () => { filters.subId = null; emit(); }
+    }, 'Все'),
+    ...cur.subs.map(s => h('button', {
+      class: 'chip' + (filters.subId === s.id ? ' active' : ''),
+      onclick: () => { filters.subId = s.id; emit(); }
+    }, s.name, h('span', { class: 'cnt' }, state.items.filter(i => i.subId === s.id).length)))
+  ) : null;
+
+  const colorRow = h('div', { class: 'palette-row' },
+    h('button', {
+      class: 'swatch', title: 'Сканировать цвет камерой',
+      style: { background: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' },
+      onclick: async () => { const hex = await scanColorFromCamera(); if (hex) { filters.color = hex; emit(); } }
+    }, '📷'),
+    ...(palette.length ? palette : BASE_COLORS).map(c => h('button', {
+      class: 'swatch' + (filters.color === c.hex ? ' sel' : ''),
+      style: { background: c.hex }, title: `${c.name}${c.n ? ' · ' + c.n : ''}`,
+      onclick: () => { filters.color = filters.color === c.hex ? null : c.hex; emit(); }
+    }))
+  );
+
+  const list = filteredItems();
+
+  const controls = h('div', { class: 'row', style: { margin: '8px 0 4px' } },
+    h('span', { class: 'small muted spacer' }, `${list.length} вещей`),
+    filters.color ? h('button', {
+      class: 'chip active', onclick: () => { filters.color = null; emit(); }
+    }, h('span', { class: 'dot', style: { background: filters.color } }), colorName(filters.color), ' ✕') : null,
+    h('button', {
+      class: 'chip' + (filters.favOnly ? ' active' : ''),
+      onclick: () => { filters.favOnly = !filters.favOnly; emit(); }
+    }, '★'),
+    h('select', {
+      style: { width: 'auto', padding: '5px 8px', fontSize: '12px' },
+      onchange: e => { filters.sort = e.target.value; emit(); }
+    },
+      [['new', 'Сначала новые'], ['old', 'Сначала старые'], ['name', 'По названию'], ['color', 'По цвету']]
+        .map(([v, t]) => h('option', { value: v, selected: filters.sort === v }, t)))
+  );
+
+  const grid = list.length ? h('div', { class: 'grid' },
+    list.map(it => h('div', {
+      class: 'tile', style: { background: bgCss(it.bg) }, onclick: () => openItemCard(it)
+    },
+      h('img', { src: urlFor(it.img), alt: it.name }),
+      it.fav ? h('span', { class: 'fav' }, '★') : null,
+      it.name ? h('span', { class: 'lbl' }, it.name) : null
+    ))
+  ) : h('div', { class: 'empty' },
+    h('div', { class: 'big' }, '🧺'),
+    h('p', {}, state.items.length ? 'Ничего не найдено по фильтрам' : 'Гардероб пуст. Добавьте первую вещь.'),
+    state.items.length ? null : h('button', { class: 'btn primary', onclick: startAddItem }, 'Добавить вещь')
+  );
+
+  fill(root, catChips, subChips, colorRow, controls, grid,
+    h('button', { class: 'fab', onclick: startAddItem, title: 'Добавить вещь' }, '+'));
+}
+
+/* ===== outfits.js ===== */
+// Вкладка «Образы»: коллекции (Style Book), редактор образа на Konva, рандомайзер.
+
+const SW = 640, SH = 860;           // логический размер холста образа
+const outfitFilter = { collectionId: null };
+
+const dataURLtoBlob = url => fetch(url).then(r => r.blob());
+
+/* ---------- редактор образа ---------- */
+async function openOutfitEditor(existing) {
+  const outfit = existing
+    ? JSON.parse(JSON.stringify({ ...existing, preview: null }))
+    : { id: uid('of'), name: '', collectionId: outfitFilter.collectionId, bg: 'cream', layers: [], createdAt: Date.now() };
+
+  const host = h('div', { id: 'stage-host' });
+  const toolbar = h('div', { class: 'tools' });
+  const opts = h('div', { class: 'tool-opts' });
+
+  const modal = openModal({
+    title: existing ? 'Редактировать образ' : 'Новый образ',
+    full: true,
+    body: h('div', { style: { display: 'flex', flexDirection: 'column', height: '100%', margin: '-12px' } }, host, opts, toolbar),
+    foot: [
+      h('button', { class: 'btn', onclick: () => modal.close() }, 'Отмена'),
+      h('button', { class: 'btn primary', onclick: save }, 'Сохранить')
+    ],
+    onClose: () => stage && stage.destroy()
+  });
+
+  await new Promise(r => setTimeout(r, 30));   // ждём вёрстку, чтобы знать размеры host
+
+  const stage = new Konva.Stage({ container: host, width: SW, height: SH });
+  const layer = new Konva.Layer();
+  stage.add(layer);
+
+  const bgRect = new Konva.Rect({ x: 0, y: 0, width: SW, height: SH, listening: false });
+  layer.add(bgRect);
+  applyBg(outfit.bg);
+
+  const tr = new Konva.Transformer({
+    rotateEnabled: true, keepRatio: true, borderStroke: '#c1785c', anchorStroke: '#c1785c',
+    anchorSize: 14, enabledAnchors: ['top-left', 'top-right', 'bottom-left', 'bottom-right']
+  });
+  layer.add(tr);
+
+  function fit() {
+    const r = host.getBoundingClientRect();
+    const s = Math.min(r.width / SW, r.height / SH) * 0.96;
+    stage.width(SW * s); stage.height(SH * s); stage.scale({ x: s, y: s });
+    stage.batchDraw();
+    return s;
+  }
+  let viewScale = fit();
+  const onResize = () => { viewScale = fit(); };
+  window.addEventListener('resize', onResize);
+
+  function applyBg(id) {
+    outfit.bg = id;
+    const b = bgById(id);
+    if (b.colors.length > 1) {
+      bgRect.fillPriority('linear-gradient');
+      bgRect.fillLinearGradientStartPoint({ x: 0, y: 0 });
+      bgRect.fillLinearGradientEndPoint({ x: SW, y: SH });
+      bgRect.fillLinearGradientColorStops([0, b.colors[0], 1, b.colors[1]]);
+    } else {
+      bgRect.fillPriority('color');
+      bgRect.fill(b.colors[0]);
+    }
+    layer.batchDraw();
+  }
+
+  stage.on('pointerdown', e => {
+    if (e.target === stage || e.target === bgRect) tr.nodes([]);
+    else if (e.target.getClassName() === 'Image') tr.nodes([e.target]);
+    layer.batchDraw();
+  });
+
+  async function addItemNode(itemId, pose) {
+    const it = itemById(itemId);
+    if (!it) return null;
+    const img = await imageFromBlob(it.img);
+    const natural = Math.max(img.naturalWidth, img.naturalHeight);
+    const target = SH * 0.34;
+    const base = target / natural;
+    const node = new Konva.Image({
+      image: img, draggable: true,
+      offsetX: img.naturalWidth / 2, offsetY: img.naturalHeight / 2,
+      x: pose?.x ?? SW / 2, y: pose?.y ?? SH / 2,
+      scaleX: pose?.scaleX ?? base, scaleY: pose?.scaleY ?? base,
+      rotation: pose?.rotation ?? 0,
+      shadowColor: 'rgba(0,0,0,.25)', shadowBlur: 18, shadowOffsetY: 6, shadowOpacity: .5
+    });
+    node.setAttr('itemId', itemId);
+    layer.add(node);
+    tr.moveToTop();
+    layer.batchDraw();
+    return node;
+  }
+
+  // восстановление сохранённого образа
+  for (const l of outfit.layers) await addItemNode(l.itemId, l);
+
+  async function addItems() {
+    const ids = await pickItems({ title: 'Добавить в образ' });
+    if (!ids || !ids.length) return;
+    let i = 0;
+    for (const id of ids) {
+      const n = await addItemNode(id, { x: SW / 2 + (i % 2 ? 70 : -70), y: SH * (0.25 + 0.22 * Math.floor(i / 2)) });
+      i++;
+      if (n) tr.nodes([n]);
+    }
+    layer.batchDraw();
+  }
+
+  async function randomize() {
+    const byCat = new Map();
+    for (const it of state.items) {
+      if (!it.catId) continue;
+      if (!byCat.has(it.catId)) byCat.set(it.catId, []);
+      byCat.get(it.catId).push(it);
+    }
+    if (!byCat.size) return toast('Сначала добавьте вещи');
+    layer.find('Image').forEach(n => n.destroy());
+    tr.nodes([]);
+    const cats = [...byCat.keys()].sort(() => Math.random() - .5).slice(0, 3);
+    let i = 0;
+    for (const c of cats) {
+      const pool = byCat.get(c);
+      const it = pool[Math.floor(Math.random() * pool.length)];
+      await addItemNode(it.id, { y: SH * (0.22 + 0.27 * i), x: SW / 2 });
+      i++;
+    }
+    layer.batchDraw();
+    toast('Случайный образ');
+  }
+
+  function selected() { return tr.nodes()[0] || null; }
+
+  const TOOLS = [
+    { ic: '➕', label: 'Вещи', fn: addItems },
+    { ic: '🎨', label: 'Фон', fn: () => showBgPicker() },
+    { ic: '🎲', label: 'Случайно', fn: randomize },
+    { ic: '⬆️', label: 'Выше', fn: () => { selected()?.moveUp(); tr.moveToTop(); layer.batchDraw(); } },
+    { ic: '⬇️', label: 'Ниже', fn: () => { const n = selected(); if (n) { n.moveDown(); if (n.zIndex() < 1) n.zIndex(1); } layer.batchDraw(); } },
+    { ic: '🗑', label: 'Убрать', fn: () => { const n = selected(); if (n) { n.destroy(); tr.nodes([]); layer.batchDraw(); } } }
+  ];
+  fill(toolbar, ...TOOLS.map(t =>
+    h('button', { class: 'tool', onclick: t.fn }, h('span', { class: 'ic' }, t.ic), h('span', {}, t.label))));
+
+  function showBgPicker() {
+    fill(opts, h('div', { class: 'palette-row' }, BGS.map(b =>
+      h('button', {
+        class: 'swatch' + (outfit.bg === b.id ? ' sel' : ''),
+        style: { background: b.css },
+        onclick: e => { applyBg(b.id); [...e.currentTarget.parentNode.children].forEach(x => x.classList.remove('sel')); e.currentTarget.classList.add('sel'); }
+      })
+    )));
+  }
+  fill(opts, h('div', { class: 'muted small' }, 'Тапните вещь, чтобы двигать, вращать и менять размер.'));
+
+  async function save() {
+    const nodes = layer.find('Image');
+    if (!nodes.length) return toast('Добавьте хотя бы одну вещь');
+    outfit.layers = nodes.map(n => ({
+      itemId: n.getAttr('itemId'), x: n.x(), y: n.y(),
+      scaleX: n.scaleX(), scaleY: n.scaleY(), rotation: n.rotation()
+    }));
+    tr.nodes([]); layer.batchDraw();
+    busy(true, 'Сохраняю образ…');
+    const url = stage.toDataURL({ pixelRatio: 1 / viewScale });
+    outfit.preview = await dataURLtoBlob(url);
+    if (!outfit.name) {
+      outfit.name = await promptDialog('Название образа', '', 'Например, «Офис, вторник»') || 'Образ';
+    }
+    await saveOutfit(outfit);
+    busy(false);
+    window.removeEventListener('resize', onResize);
+    modal.close();
+    toast('Образ сохранён');
+  }
+}
+
+/* ---------- карточка образа ---------- */
+function openOutfitCard(o) {
+  const modal = openModal({
+    title: o.name || 'Образ',
+    body: h('div', {},
+      h('div', { class: 'tile', style: { aspectRatio: '3/4', background: bgCss(o.bg) } }, h('img', { src: urlFor(o.preview) })),
+      h('div', { class: 'section-title' }, 'Вещи в образе'),
+      h('div', { class: 'grid' }, o.layers.map(l => {
+        const it = itemById(l.itemId);
+        return it ? h('div', { class: 'tile', style: { background: bgCss(it.bg) } }, h('img', { src: urlFor(it.img) })) : null;
+      }))
+    ),
+    foot: [
+      h('button', {
+        class: 'btn', onclick: async () => {
+          const cid = await pickCollection();
+          if (cid !== undefined) { o.collectionId = cid; await saveOutfit(o); toast('Перемещено'); modal.close(); }
+        }
+      }, '📚 В коллекцию'),
+      h('button', { class: 'btn', onclick: () => { modal.close(); openOutfitEditor(o); } }, '✎ Изменить'),
+      h('button', {
+        class: 'btn danger', onclick: async () => {
+          if (await confirmDialog('Удалить образ?')) { await deleteOutfit(o.id); modal.close(); }
+        }
+      }, '🗑')
+    ]
+  });
+}
+
+function pickCollection() {
+  return new Promise(res => {
+    let done = false;
+    const modal = openModal({
+      title: 'Коллекция',
+      body: h('div', { class: 'list' },
+        h('button', { class: 'btn block', onclick: () => { done = true; modal.close(); res(null); } }, 'Без коллекции'),
+        ...state.collections.map(c => h('button', {
+          class: 'btn block', onclick: () => { done = true; modal.close(); res(c.id); }
+        }, c.name)),
+        h('button', {
+          class: 'btn block primary', onclick: async () => {
+            const n = await promptDialog('Новая коллекция');
+            if (!n) return;
+            const c = await saveCollection({ id: uid('col'), name: n, createdAt: Date.now() });
+            done = true; modal.close(); res(c.id);
+          }
+        }, '+ Новая коллекция')),
+      onClose: () => { if (!done) res(undefined); }
+    });
+  });
+}
+
+/* ---------- рендер вкладки ---------- */
+function renderOutfits(root) {
+  const chips = h('div', { class: 'chips' },
+    h('button', {
+      class: 'chip' + (!outfitFilter.collectionId ? ' active' : ''),
+      onclick: () => { outfitFilter.collectionId = null; emit(); }
+    }, 'Все', h('span', { class: 'cnt' }, state.outfits.length)),
+    ...state.collections.map(c => h('button', {
+      class: 'chip' + (outfitFilter.collectionId === c.id ? ' active' : ''),
+      onclick: () => { outfitFilter.collectionId = c.id; emit(); },
+      oncontextmenu: async e => {
+        e.preventDefault();
+        if (await confirmDialog(`Удалить коллекцию «${c.name}»?`)) { await deleteCollection(c.id); }
+      }
+    }, `📚 ${c.name}`, h('span', { class: 'cnt' }, state.outfits.filter(o => o.collectionId === c.id).length))),
+    h('button', {
+      class: 'chip', onclick: async () => {
+        const n = await promptDialog('Новая коллекция');
+        if (n) await saveCollection({ id: uid('col'), name: n, createdAt: Date.now() });
+      }
+    }, '+')
+  );
+
+  const list = state.outfits.filter(o => !outfitFilter.collectionId || o.collectionId === outfitFilter.collectionId);
+
+  const grid = list.length ? h('div', { class: 'grid g2' },
+    list.map(o => h('div', {
+      class: 'tile', style: { background: bgCss(o.bg) }, onclick: () => openOutfitCard(o)
+    }, h('img', { src: urlFor(o.preview) }), h('span', { class: 'lbl' }, o.name || 'Образ')))
+  ) : h('div', { class: 'empty' },
+    h('div', { class: 'big' }, '👗'),
+    h('p', {}, 'Образов пока нет'),
+    h('button', { class: 'btn primary', onclick: () => openOutfitEditor(null) }, 'Собрать образ'));
+
+  fill(root, chips, grid,
+    h('button', { class: 'fab', onclick: () => openOutfitEditor(null) }, '+'));
+}
+
+/* ===== calendar.js ===== */
+// Вкладка «Календарь»: планирование образов и отдельных вещей по дням.
+
+let cursor = new Date();
+const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль',
+  'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+
+function openDay(dateStr) {
+  const day = dayByDate(dateStr) || { id: dateStr, outfitIds: [], itemIds: [] };
+  const body = h('div', {});
+  const modal = openModal({ title: fmtDate(dateStr), body, full: true });
+
+  function render() {
+    const outfits = (day.outfitIds || []).map(outfitById).filter(Boolean);
+    const items = (day.itemIds || []).map(itemById).filter(Boolean);
+    fill(body, 
+      h('div', { class: 'row', style: { gap: '8px', marginBottom: '10px' } },
+        h('button', {
+          class: 'btn primary', style: { flex: '1' }, onclick: async () => {
+            const ids = await pickOutfits({ selected: day.outfitIds, title: 'Образы на день' });
+            if (ids) { day.outfitIds = ids; await saveDay(day); render(); }
+          }
+        }, '👗 Образы'),
+        h('button', {
+          class: 'btn', style: { flex: '1' }, onclick: async () => {
+            const ids = await pickItems({ selected: day.itemIds, title: 'Вещи на день' });
+            if (ids) { day.itemIds = ids; await saveDay(day); render(); }
+          }
+        }, '🧺 Вещи')
+      ),
+      outfits.length ? h('div', { class: 'section-title' }, 'Образы') : null,
+      outfits.length ? h('div', { class: 'grid g2' }, outfits.map(o =>
+        h('div', { class: 'tile', style: { background: bgCss(o.bg) } },
+          h('img', { src: urlFor(o.preview) }), h('span', { class: 'lbl' }, o.name)))) : null,
+      items.length ? h('div', { class: 'section-title' }, 'Вещи') : null,
+      items.length ? h('div', { class: 'grid' }, items.map(it =>
+        h('div', { class: 'tile', style: { background: bgCss(it.bg) } }, h('img', { src: urlFor(it.img) })))) : null,
+      (!outfits.length && !items.length) ? h('div', { class: 'empty' }, 'На этот день ничего не запланировано') : null
+    );
+  }
+  render();
+}
+
+function renderCalendar(root) {
+  const y = cursor.getFullYear(), m = cursor.getMonth();
+  const first = new Date(y, m, 1);
+  const startShift = (first.getDay() + 6) % 7;           // неделя с понедельника
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const todayIso = iso(new Date());
+
+  const cells = [];
+  for (let i = 0; i < 42; i++) {
+    const dayNum = i - startShift + 1;
+    const date = new Date(y, m, dayNum);
+    const ds = iso(date);
+    const rec = dayByDate(ds);
+    const outfit = rec?.outfitIds?.length ? outfitById(rec.outfitIds[0]) : null;
+    const firstItem = !outfit && rec?.itemIds?.length ? itemById(rec.itemIds[0]) : null;
+    const total = (rec?.outfitIds?.length || 0) + (rec?.itemIds?.length || 0);
+    cells.push(h('div', {
+      class: 'cal-cell' + (dayNum < 1 || dayNum > daysInMonth ? ' out' : '') + (ds === todayIso ? ' today' : ''),
+      onclick: () => openDay(ds)
+    },
+      h('div', { class: 'd' }, date.getDate()),
+      h('div', { class: 'pv' },
+        outfit ? h('img', { src: urlFor(outfit.preview) })
+          : firstItem ? h('img', { src: urlFor(firstItem.img) }) : null),
+      total > 1 ? h('span', { class: 'n' }, total) : null
+    ));
+  }
+
+  const monthPlanned = state.calendar.filter(d =>
+    d.id.startsWith(`${y}-${String(m + 1).padStart(2, '0')}`) && ((d.outfitIds?.length || 0) + (d.itemIds?.length || 0))).length;
+
+  fill(root, 
+    h('div', { class: 'row', style: { marginBottom: '10px' } },
+      h('button', { class: 'btn btn-sm', onclick: () => { cursor = new Date(y, m - 1, 1); emit(); } }, '‹'),
+      h('b', { class: 'spacer center', style: { textAlign: 'center' } }, `${MONTHS[m]} ${y}`),
+      h('button', { class: 'btn btn-sm', onclick: () => { cursor = new Date(y, m + 1, 1); emit(); } }, '›')
+    ),
+    h('div', { class: 'stat-row' },
+      h('div', { class: 'stat' }, h('b', {}, monthPlanned), h('span', {}, 'дней распланировано')),
+      h('div', { class: 'stat' }, h('b', {}, state.outfits.length), h('span', {}, 'образов в базе'))
+    ),
+    h('div', { class: 'cal-head' }, WD.map(d => h('div', {}, d))),
+    h('div', { class: 'cal-grid' }, cells),
+    h('button', { class: 'btn block', style: { marginTop: '12px' }, onclick: () => { cursor = new Date(); emit(); } }, 'Сегодня')
+  );
+}
+
+/* ===== packing.js ===== */
+// Вкладка «Чемодан»: списки вещей и образов на поездку с отметками «уложено».
+
+function tripProgress(t) {
+  const total = (t.itemIds?.length || 0) + (t.outfitIds?.length || 0);
+  const done = Object.values(t.checked || {}).filter(Boolean).length;
+  return { total, done };
+}
+
+function openTrip(trip) {
+  const body = h('div', {});
+  const modal = openModal({ title: trip.name, body, full: true, onClose: emit });
+
+  function render() {
+    const items = (trip.itemIds || []).map(itemById).filter(Boolean);
+    const outfits = (trip.outfitIds || []).map(outfitById).filter(Boolean);
+    const { total, done } = tripProgress(trip);
+
+    fill(body, 
+      h('div', { class: 'stat-row' },
+        h('div', { class: 'stat' }, h('b', {}, `${done}/${total}`), h('span', {}, 'уложено')),
+        h('div', { class: 'stat' }, h('b', {}, outfits.length), h('span', {}, 'образов')),
+        h('div', { class: 'stat' }, h('b', {}, items.length), h('span', {}, 'вещей'))
+      ),
+      trip.from ? h('p', { class: 'muted small center' }, `${fmtDate(trip.from)} — ${fmtDate(trip.to)}`) : null,
+      h('div', { class: 'row', style: { gap: '8px', margin: '10px 0' } },
+        h('button', {
+          class: 'btn primary', style: { flex: '1' }, onclick: async () => {
+            const ids = await pickOutfits({ selected: trip.outfitIds, title: 'Образы в поездку' });
+            if (ids) { trip.outfitIds = ids; await saveTrip(trip); render(); }
+          }
+        }, '👗 Образы'),
+        h('button', {
+          class: 'btn', style: { flex: '1' }, onclick: async () => {
+            const ids = await pickItems({ selected: trip.itemIds, title: 'Вещи в поездку' });
+            if (ids) { trip.itemIds = ids; await saveTrip(trip); render(); }
+          }
+        }, '🧺 Вещи')
+      ),
+      outfits.length ? h('div', { class: 'section-title' }, 'Образы') : null,
+      h('div', { class: 'list' }, outfits.map(o => row(o.id, o.preview, o.name || 'Образ', 'образ', o.bg))),
+      items.length ? h('div', { class: 'section-title' }, 'Вещи' ) : null,
+      h('div', { class: 'list' }, items.map(it => row(it.id, it.img, it.name || 'Вещь', '', it.bg))),
+      (!items.length && !outfits.length) ? h('div', { class: 'empty' }, 'Добавьте вещи и образы в чемодан') : null
+    );
+  }
+
+  function row(id, blob, title, sub, bg) {
+    const checked = !!trip.checked?.[id];
+    return h('label', { class: 'lrow', style: { opacity: checked ? .55 : 1 } },
+      h('img', { class: 'thumb', src: urlFor(blob), style: { background: bgCss(bg) } }),
+      h('div', { class: 't' }, h('b', { style: { textDecoration: checked ? 'line-through' : '' } }, title), sub ? h('span', {}, sub) : null),
+      h('input', {
+        type: 'checkbox', checked, style: { width: '22px', height: '22px', accentColor: 'var(--accent)' },
+        onchange: async e => {
+          trip.checked = trip.checked || {};
+          trip.checked[id] = e.target.checked;
+          await saveTrip(trip); render();
+        }
+      })
+    );
+  }
+  render();
+}
+
+async function newTrip() {
+  const name = await promptDialog('Новая поездка', '', 'Куда едем?');
+  if (!name) return;
+  const today = new Date();
+  const later = new Date(Date.now() + 6 * 864e5);
+  const trip = { id: uid('tr'), name, from: iso(today), to: iso(later), itemIds: [], outfitIds: [], checked: {}, createdAt: Date.now() };
+  await saveTrip(trip);
+  openTrip(trip);
+}
+
+function renderPacking(root) {
+  const list = state.trips;
+  fill(root, 
+    list.length ? h('div', { class: 'list' }, list.map(t => {
+      const { total, done } = tripProgress(t);
+      return h('div', { class: 'lrow', onclick: () => openTrip(t) },
+        h('div', { style: { fontSize: '26px' } }, '🧳'),
+        h('div', { class: 't' }, h('b', {}, t.name),
+          h('span', {}, `${fmtDate(t.from)} — ${fmtDate(t.to)} · уложено ${done}/${total}`)),
+        h('button', {
+          class: 'btn btn-sm danger', onclick: async e => {
+            e.stopPropagation();
+            if (await confirmDialog(`Удалить поездку «${t.name}»?`)) await deleteTrip(t.id);
+          }
+        }, '🗑')
+      );
+    })) : h('div', { class: 'empty' },
+      h('div', { class: 'big' }, '🧳'),
+      h('p', {}, 'Поездок пока нет'),
+      h('button', { class: 'btn primary', onclick: newTrip }, 'Собрать чемодан')),
+    h('button', { class: 'fab', onclick: newTrip }, '+')
+  );
+}
+
+/* ===== shop.js ===== */
+// Вкладка «Каталог»: демо-витрина онлайн-одежды (моковые данные, товары рисуются SVG).
+// В реальном приложении здесь был бы запрос к API магазина.
+
+const SHAPES = {
+  tshirt: { name: 'Футболка', cat: 'Верх', d: 'M60 30 L85 20 Q100 36 115 20 L140 30 L170 60 L150 82 L140 70 L140 180 L60 180 L60 70 L50 82 L30 60 Z' },
+  sweater: { name: 'Свитер', cat: 'Верх', d: 'M60 30 L85 20 Q100 36 115 20 L140 30 L174 72 L152 142 L138 132 L140 182 L60 182 L62 132 L48 142 L26 72 Z' },
+  shirt: { name: 'Рубашка', cat: 'Верх', d: 'M62 28 L88 18 L100 38 L112 18 L138 28 L170 62 L150 84 L140 72 L140 180 L60 180 L60 72 L50 84 L30 62 Z' },
+  pants: { name: 'Брюки', cat: 'Низ', d: 'M65 22 H135 L143 186 H107 L100 106 L93 186 H57 Z' },
+  skirt: { name: 'Юбка', cat: 'Низ', d: 'M64 38 H136 L162 176 Q100 168 38 176 Z', lines: ['M64 52 H136'] },
+  dress: { name: 'Платье', cat: 'Платья', d: 'M70 26 L86 18 Q100 34 114 18 L130 26 L120 62 L148 182 H52 L80 62 Z' },
+  jacket: {
+    name: 'Куртка', cat: 'Верхняя одежда',
+    d: 'M60 28 L88 18 L100 42 L112 18 L140 28 L170 64 L150 86 L140 74 V182 H60 V74 L50 86 L30 64 Z',
+    lines: ['M88 18 L100 42 L112 18', 'M100 42 V182']
+  },
+  sneaker: { name: 'Кроссовки', cat: 'Обувь', d: 'M36 132 H92 L118 150 L162 160 Q174 163 174 174 H36 Z' },
+  bag: {
+    name: 'Сумка', cat: 'Аксессуары', d: 'M56 76 H144 L152 172 Q153 178 147 178 H53 Q47 178 48 172 Z',
+    lines: ['M78 76 V62 a22 22 0 0 1 44 0 V76']
+  }
+};
+
+const PALETTE = ['#28406e', '#d94f45', '#efe3cf', '#2f6d5a', '#4a4a4a', '#c1785c',
+  '#d98fb0', '#ffffff', '#e9c94b', '#7b5ea7', '#8b5e3c', '#4b8fc4'];
+
+const BRANDS = ['Aria', 'Norra', 'Lume', 'Sabo', 'Kova', 'Mirt'];
+
+function makeCatalog() {
+  const keys = Object.keys(SHAPES);
+  const out = [];
+  let n = 0;
+  for (const k of keys) {
+    for (let i = 0; i < 3; i++) {
+      const color = PALETTE[(n * 5 + i * 3) % PALETTE.length];
+      out.push({
+        id: `${k}-${i}`,
+        shape: k,
+        color,
+        name: `${SHAPES[k].name} ${colorName(color).toLowerCase()}`,
+        cat: SHAPES[k].cat,
+        brand: BRANDS[(n + i) % BRANDS.length],
+        price: 1490 + ((n * 37 + i * 11) % 60) * 50
+      });
+      n++;
+    }
+  }
+  return out;
+}
+const CATALOG = makeCatalog();
+
+function svgFor(p, size = 200) {
+  const dark = p.color === '#ffffff' || p.color === '#efe3cf' ? '#00000022' : '#00000033';
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="${size}" height="${size}">
+    <path d="${SHAPES[p.shape].d}" fill="${p.color}" stroke="${dark}" stroke-width="3" stroke-linejoin="round"/>
+    ${(SHAPES[p.shape].lines || []).map(d => `<path d="${d}" fill="none" stroke="${dark}" stroke-width="3" stroke-linecap="round"/>`).join('')}
+  </svg>`;
+}
+
+async function svgToBlob(p) {
+  const svg = svgFor(p, 600);
+  const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  const img = await imageFromBlob(url);
+  const c = document.createElement('canvas');
+  c.width = 600; c.height = 600;
+  c.getContext('2d').drawImage(img, 0, 0, 600, 600);
+  return new Promise(res => c.toBlob(res, 'image/png'));
+}
+
+async function addToCloset(p, silent = false) {
+  busy(true, 'Добавляю в гардероб…');
+  const blob = await svgToBlob(p);
+  const cat = state.cats.find(c => c.name === p.cat) || state.cats[0];
+  const sub = cat?.subs.find(s => s.name.toLowerCase().startsWith(SHAPES[p.shape].name.slice(0, 4).toLowerCase()));
+  let colors = [];
+  try { colors = extractPalette(await imageFromBlob(blob), 4); } catch (e) { }
+  await saveItem({
+    id: uid('it'), name: `${p.name} · ${p.brand}`, catId: cat?.id || null, subId: sub?.id || null,
+    img: blob, colors, bg: 'none', fav: false, source: 'shop', createdAt: Date.now()
+  });
+  busy(false);
+  if (!silent) toast('Добавлено в гардероб');
+}
+
+const filter = { cat: null, color: null };
+
+function openProduct(p) {
+  const modal = openModal({
+    title: p.name,
+    body: h('div', {},
+      h('div', { class: 'tile', style: { aspectRatio: '1', background: '#f7f3ef' }, html: svgFor(p, 260) }),
+      h('div', { class: 'lrow', style: { marginTop: '12px' } },
+        h('div', { class: 't' }, h('b', {}, p.brand), h('span', {}, `${p.cat} · ${colorName(p.color)}`)),
+        h('b', {}, `${p.price} ₽`))
+    ),
+    foot: [
+      h('button', { class: 'btn primary', onclick: async () => { modal.close(); await addToCloset(p); } }, '＋ В гардероб'),
+      h('button', {
+        class: 'btn', onclick: async () => {
+          modal.close(); await addToCloset(p);
+          openOutfitEditor(null);
+        }
+      }, '👗 Примерить')
+    ]
+  });
+}
+
+function renderShop(root) {
+  const cats = [...new Set(CATALOG.map(p => p.cat))];
+  const list = CATALOG.filter(p =>
+    (!filter.cat || p.cat === filter.cat) &&
+    (!filter.color || colorDist(p.color, filter.color) < 0.13));
+
+  fill(root, 
+    h('p', { class: 'muted small' }, 'Демо-витрина: товары можно примерить и добавить в свой гардероб.'),
+    h('div', { class: 'chips' },
+      h('button', { class: 'chip' + (!filter.cat ? ' active' : ''), onclick: () => { filter.cat = null; emit(); } }, 'Все'),
+      ...cats.map(c => h('button', {
+        class: 'chip' + (filter.cat === c ? ' active' : ''), onclick: () => { filter.cat = c; emit(); }
+      }, c))),
+    h('div', { class: 'palette-row' },
+      BASE_COLORS.map(c => h('button', {
+        class: 'swatch' + (filter.color === c.hex ? ' sel' : ''), style: { background: c.hex }, title: c.name,
+        onclick: () => { filter.color = filter.color === c.hex ? null : c.hex; emit(); }
+      }))),
+    h('div', { class: 'row', style: { margin: '6px 2px' } },
+      h('span', { class: 'small muted spacer' }, `${list.length} товаров`)),
+    list.length ? h('div', { class: 'grid g2' }, list.map(p => h('div', {
+      class: 'tile', style: { background: '#f7f3ef' }, onclick: () => openProduct(p)
+    },
+      h('div', { style: { width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }, html: svgFor(p, 150) }),
+      h('span', { class: 'lbl' }, `${p.brand} · ${p.price} ₽`)
+    ))) : h('div', { class: 'empty' }, 'Ничего не найдено')
+  );
+}
+
+/* ===== settings.js ===== */
+// Настройки: резервная копия (экспорт/импорт JSON), демо-данные, сброс.
+// В приложении это Google Drive; в прототипе — обычный файл, логика та же.
+
+const BLOB_FIELDS = { items: ['img'], outfits: ['preview'] };
+
+const blobToDataURL = b => new Promise(res => {
+  const fr = new FileReader();
+  fr.onload = () => res(fr.result);
+  fr.readAsDataURL(b);
+});
+const dataURLToBlob = url => fetch(url).then(r => r.blob());
+
+async function exportAll() {
+  busy(true, 'Готовлю резервную копию…');
+  const dump = { version: 1, createdAt: new Date().toISOString(), stores: {} };
+  for (const s of STORES) {
+    const rows = await dbAll(s);
+    const fields = BLOB_FIELDS[s] || [];
+    dump.stores[s] = await Promise.all(rows.map(async r => {
+      const copy = { ...r };
+      for (const f of fields) if (copy[f] instanceof Blob) copy[f] = await blobToDataURL(copy[f]);
+      return copy;
+    }));
+  }
+  const filename = `yourcloset-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  busy(false);
+  const downloads = typeof window.claude?.use === 'function' ? await window.claude.use('downloads') : null;
+  if (!downloads) { toast('Сохранение файла недоступно в этом просмотре', 3200); return; }
+  try {
+    await downloads.save({ filename, data: JSON.stringify(dump) });
+    toast('Копия сохранена');
+  } catch (e) {
+    if (e && e.code !== 'declined') toast('Не удалось сохранить копию', 3200);
+  }
+}
+
+async function importAll(file) {
+  busy(true, 'Восстанавливаю…');
+  try {
+    const dump = JSON.parse(await file.text());
+    if (!dump.stores) throw new Error('bad format');
+    for (const s of STORES) {
+      await dbClear(s);
+      const fields = BLOB_FIELDS[s] || [];
+      for (const row of dump.stores[s] || []) {
+        const copy = { ...row };
+        for (const f of fields) if (typeof copy[f] === 'string' && copy[f].startsWith('data:')) copy[f] = await dataURLToBlob(copy[f]);
+        await dbPut(s, copy);
+      }
+    }
+    await loadAll();
+    emit();
+    toast('Данные восстановлены');
+  } catch (e) {
+    console.error(e);
+    toast('Не удалось прочитать файл');
+  } finally { busy(false); }
+}
+
+async function seedDemo() {
+  busy(true, 'Наполняю демо-гардероб…');
+  const sample = CATALOG.filter((_, i) => i % 2 === 0);
+  for (const p of sample) await addToCloset(p, true);
+  busy(false);
+  emit();
+  toast(`Добавлено ${sample.length} вещей`);
+}
+
+async function wipe() {
+  if (!await confirmDialog('Удалить все вещи, образы и планы? Действие необратимо.', 'Стереть')) return;
+  busy(true, 'Очищаю…');
+  for (const s of STORES) await dbClear(s);
+  await loadAll();
+  emit();
+  busy(false);
+  toast('Данные удалены');
+}
+
+function openSettings() {
+  const fileInput = h('input', {
+    type: 'file', accept: 'application/json', style: { display: 'none' },
+    onchange: e => { const f = e.target.files[0]; if (f) importAll(f); e.target.value = ''; }
+  });
+
+  openModal({
+    title: 'Настройки',
+    body: h('div', {},
+      h('div', { class: 'stat-row' },
+        h('div', { class: 'stat' }, h('b', {}, state.items.length), h('span', {}, 'вещей')),
+        h('div', { class: 'stat' }, h('b', {}, state.outfits.length), h('span', {}, 'образов')),
+        h('div', { class: 'stat' }, h('b', {}, state.trips.length), h('span', {}, 'поездок'))),
+      h('div', { class: 'section-title' }, 'Резервная копия'),
+      h('div', { class: 'list' },
+        h('button', { class: 'btn block', onclick: exportAll }, '⬇️ Сохранить копию в файл'),
+        h('button', { class: 'btn block', onclick: () => fileInput.click() }, '⬆️ Восстановить из файла'),
+        fileInput),
+      h('div', { class: 'section-title' }, 'Прочее'),
+      h('div', { class: 'list' },
+        h('button', { class: 'btn block', onclick: seedDemo }, '✨ Наполнить демо-вещами'),
+        h('button', { class: 'btn block danger', onclick: wipe }, '🗑 Стереть все данные')),
+      h('p', { class: 'muted small', style: { marginTop: '16px' } },
+        'Веб-демо: ИИ-вырезание фона и камера недоступны, остальное работает целиком. Данные лежат только в вашем браузере (IndexedDB) — для переноса делайте копию.')
+    )
+  });
+}
+
+/* ===== app.js ===== */
+// Точка входа: загрузка состояния, переключение вкладок, перерисовка.
+
+const TABS = {
+  closet: { title: 'Гардероб', render: renderCloset },
+  outfits: { title: 'Образы', render: renderOutfits },
+  calendar: { title: 'Календарь', render: renderCalendar },
+  packing: { title: 'Чемодан', render: renderPacking },
+  shop: { title: 'Каталог', render: renderShop }
+};
+
+let current = 'closet';
+
+function renderTopbar() {
+  qs('#tb-title').textContent = TABS[current].title;
+  const actions = qs('#tb-actions');
+  fill(actions, 
+    current === 'outfits'
+      ? h('button', { class: 'icon-btn', title: 'Новый образ', onclick: () => openOutfitEditor(null) }, '🎨')
+      : null,
+    h('button', { class: 'icon-btn', title: 'Настройки', onclick: openSettings }, '⚙️')
+  );
+}
+
+function render() {
+  for (const key of Object.keys(TABS)) {
+    const el = qs('#view-' + key);
+    el.hidden = key !== current;
+  }
+  const root = qs('#view-' + current);
+  TABS[current].render(root);
+  renderTopbar();
+}
+
+function setTab(tab) {
+  current = tab;
+  qsa('#tabbar button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  qs('main#views').scrollTop = 0;
+  render();
+}
+
+async function boot() {
+  await loadAll();
+  subscribe(() => render());
+  qsa('#tabbar button').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
+  render();
+
+  if (!state.items.length) {
+    setTimeout(() => toast('Совет: «Настройки → Наполнить демо-вещами»', 3600), 700);
+  }
+}
+
+boot().catch(e => {
+  console.error(e);
+  document.body.innerHTML = '<p style="padding:24px">Ошибка запуска: ' + e.message + '</p>';
+});
+</script>

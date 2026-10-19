@@ -1,6 +1,6 @@
 // Настройки: резервная копия (экспорт/импорт JSON), демо-данные, сброс.
 // В приложении это Google Drive; в прототипе — обычный файл, логика та же.
-import { fill, h, openModal, toast, busy, confirmDialog } from './ui.js';
+import { fill, h, openModal, toast, busy } from './ui.js';
 import { dbAll, dbPut, dbClear, STORES } from './db.js';
 import { state, loadAll, emit } from './state.js';
 import { CATALOG, addToCloset } from './shop.js';
@@ -68,16 +68,6 @@ async function seedDemo() {
   toast(`Добавлено ${sample.length} вещей`);
 }
 
-async function wipe() {
-  if (!await confirmDialog('Удалить все вещи, образы и планы? Действие необратимо.', 'Стереть')) return;
-  busy(true, 'Очищаю…');
-  for (const s of STORES) await dbClear(s);
-  await loadAll();
-  emit();
-  busy(false);
-  toast('Данные удалены');
-}
-
 export function openSettings() {
   const fileInput = h('input', {
     type: 'file', accept: 'application/json', style: { display: 'none' },
@@ -98,8 +88,7 @@ export function openSettings() {
         fileInput),
       h('div', { class: 'section-title' }, 'Прочее'),
       h('div', { class: 'list' },
-        h('button', { class: 'btn block', onclick: seedDemo }, '✨ Наполнить демо-вещами'),
-        h('button', { class: 'btn block danger', onclick: wipe }, '🗑 Стереть все данные')),
+        h('button', { class: 'btn block', onclick: seedDemo }, '✨ Наполнить демо-вещами')),
       h('p', { class: 'muted small', style: { marginTop: '16px' } },
         'Прототип хранит всё локально в браузере (IndexedDB). Очистка данных сайта удалит гардероб — делайте копию.')
     )

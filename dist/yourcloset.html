@@ -2274,16 +2274,6 @@ async function seedDemo() {
   toast(`Добавлено ${sample.length} вещей`);
 }
 
-async function wipe() {
-  if (!await confirmDialog('Удалить все вещи, образы и планы? Действие необратимо.', 'Стереть')) return;
-  busy(true, 'Очищаю…');
-  for (const s of STORES) await dbClear(s);
-  await loadAll();
-  emit();
-  busy(false);
-  toast('Данные удалены');
-}
-
 function openSettings() {
   const fileInput = h('input', {
     type: 'file', accept: 'application/json', style: { display: 'none' },
@@ -2304,8 +2294,7 @@ function openSettings() {
         fileInput),
       h('div', { class: 'section-title' }, 'Прочее'),
       h('div', { class: 'list' },
-        h('button', { class: 'btn block', onclick: seedDemo }, '✨ Наполнить демо-вещами'),
-        h('button', { class: 'btn block danger', onclick: wipe }, '🗑 Стереть все данные')),
+        h('button', { class: 'btn block', onclick: seedDemo }, '✨ Наполнить демо-вещами')),
       h('p', { class: 'muted small', style: { marginTop: '16px' } },
         'Веб-демо: ИИ-вырезание фона и камера недоступны, остальное работает целиком. Данные лежат только в вашем браузере (IndexedDB) — для переноса делайте копию.')
     )

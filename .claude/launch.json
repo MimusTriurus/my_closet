@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "yourcloset",
-      "runtimeExecutable": "python",
+      "runtimeExecutable": "py",
       "runtimeArgs": ["dev-server.py", "8123"],
       "port": 8123
     }

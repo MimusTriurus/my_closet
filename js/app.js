@@ -1,6 +1,6 @@
 // Точка входа: загрузка состояния, переключение вкладок, перерисовка.
-import { fill, qs, qsa, h, toast } from './ui.js';
-import { loadAll, subscribe, state } from './state.js';
+import { fill, qs, qsa, h } from './ui.js';
+import { loadAll, subscribe } from './state.js';
 import { renderCloset, startAddItem } from './closet.js';
 import { renderOutfits, openOutfitEditor } from './outfits.js';
 import { renderCalendar } from './calendar.js';
@@ -51,10 +51,6 @@ async function boot() {
   subscribe(() => render());
   qsa('#tabbar button').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
   render();
-
-  if (!state.items.length) {
-    setTimeout(() => toast('Совет: «Настройки → Наполнить демо-вещами»', 3600), 700);
-  }
 }
 
 boot().catch(e => {

@@ -1,9 +1,8 @@
-// Настройки: резервная копия (экспорт/импорт JSON), демо-данные, сброс.
+// Настройки: резервная копия — экспорт и импорт всего гардероба одним JSON.
 // В приложении это Google Drive; в прототипе — обычный файл, логика та же.
 import { fill, h, openModal, toast, busy } from './ui.js';
 import { dbAll, dbPut, dbClear, STORES } from './db.js';
 import { state, loadAll, emit } from './state.js';
-import { CATALOG, addToCloset } from './shop.js';
 
 const BLOB_FIELDS = { items: ['img'], outfits: ['preview'] };
 
@@ -59,15 +58,6 @@ async function importAll(file) {
   } finally { busy(false); }
 }
 
-async function seedDemo() {
-  busy(true, 'Наполняю демо-гардероб…');
-  const sample = CATALOG.filter((_, i) => i % 2 === 0);
-  for (const p of sample) await addToCloset(p, true);
-  busy(false);
-  emit();
-  toast(`Добавлено ${sample.length} вещей`);
-}
-
 export function openSettings() {
   const fileInput = h('input', {
     type: 'file', accept: 'application/json', style: { display: 'none' },
@@ -86,9 +76,6 @@ export function openSettings() {
         h('button', { class: 'btn block', onclick: exportAll }, '⬇️ Сохранить копию в файл'),
         h('button', { class: 'btn block', onclick: () => fileInput.click() }, '⬆️ Восстановить из файла'),
         fileInput),
-      h('div', { class: 'section-title' }, 'Прочее'),
-      h('div', { class: 'list' },
-        h('button', { class: 'btn block', onclick: seedDemo }, '✨ Наполнить демо-вещами')),
       h('p', { class: 'muted small', style: { marginTop: '16px' } },
         'Прототип хранит всё локально в браузере (IndexedDB). Очистка данных сайта удалит гардероб — делайте копию.')
     )

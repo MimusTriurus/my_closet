@@ -2206,7 +2206,7 @@ function renderShop(root) {
 }
 
 /* ===== settings.js ===== */
-// Настройки: резервная копия (экспорт/импорт JSON), демо-данные, сброс.
+// Настройки: резервная копия — экспорт и импорт всего гардероба одним JSON.
 // В приложении это Google Drive; в прототипе — обычный файл, логика та же.
 
 const BLOB_FIELDS = { items: ['img'], outfits: ['preview'] };
@@ -2265,15 +2265,6 @@ async function importAll(file) {
   } finally { busy(false); }
 }
 
-async function seedDemo() {
-  busy(true, 'Наполняю демо-гардероб…');
-  const sample = CATALOG.filter((_, i) => i % 2 === 0);
-  for (const p of sample) await addToCloset(p, true);
-  busy(false);
-  emit();
-  toast(`Добавлено ${sample.length} вещей`);
-}
-
 function openSettings() {
   const fileInput = h('input', {
     type: 'file', accept: 'application/json', style: { display: 'none' },
@@ -2292,9 +2283,6 @@ function openSettings() {
         h('button', { class: 'btn block', onclick: exportAll }, '⬇️ Сохранить копию в файл'),
         h('button', { class: 'btn block', onclick: () => fileInput.click() }, '⬆️ Восстановить из файла'),
         fileInput),
-      h('div', { class: 'section-title' }, 'Прочее'),
-      h('div', { class: 'list' },
-        h('button', { class: 'btn block', onclick: seedDemo }, '✨ Наполнить демо-вещами')),
       h('p', { class: 'muted small', style: { marginTop: '16px' } },
         'Веб-демо: ИИ-вырезание фона и камера недоступны, остальное работает целиком. Данные лежат только в вашем браузере (IndexedDB) — для переноса делайте копию.')
     )
@@ -2347,10 +2335,6 @@ async function boot() {
   subscribe(() => render());
   qsa('#tabbar button').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
   render();
-
-  if (!state.items.length) {
-    setTimeout(() => toast('Совет: «Настройки → Наполнить демо-вещами»', 3600), 700);
-  }
 }
 
 boot().catch(e => {

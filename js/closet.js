@@ -10,7 +10,8 @@ import { BGS, bgCss } from './bgs.js';
 import { openImageEditor, imageFromBlob, downscaleBlob } from './editor.js';
 import { pickImageFile, pickImageFiles, captureFromCamera, scanColorFromCamera } from './capture.js';
 
-export const filters = { catId: null, subId: null, color: null, sort: 'new', favOnly: false };
+// фильтры живут только в разделе «Все вещи» — по категориям ходит nav
+export const filters = { color: null, sort: 'new', favOnly: false };
 
 /* ---------- добавление вещи ---------- */
 export async function addItemFlow(sourceBlob, preset = {}) {
@@ -26,8 +27,8 @@ export async function addItemFlow(sourceBlob, preset = {}) {
 
   const item = createItem({
     name: preset.name || '',
-    catId: preset.catId ?? filters.catId ?? state.cats.find(c => !c.system)?.id ?? null,
-    subId: preset.subId ?? null,
+    catId: preset.catId ?? nav.catId ?? state.cats.find(c => !c.system)?.id ?? null,
+    subId: preset.subId ?? (nav.subId && nav.subId !== OTHER ? nav.subId : null),
     img: blob,
     colors,
     source: preset.source || 'photo'
@@ -63,10 +64,9 @@ export async function importFiles(files) {
   busy(false);
 
   if (!added) { toast('Не удалось прочитать изображения', 3200); return; }
-  filters.catId = cat?.id ?? null;
-  filters.subId = null;
-  filters.color = null;
-  filters.favOnly = false;
+  nav.all = false;
+  nav.catId = cat?.id ?? null;
+  nav.subId = null;
   emit();
   const skipped = files.length - added;
   toast(`Добавлено ${added} в «${cat?.name || 'гардероб'}»` + (skipped ? ` · пропущено ${skipped}` : ''), 3000);
@@ -184,7 +184,7 @@ export function openItemCard(item) {
       h('div', { class: 'section-title' }, 'Цвета'),
       h('div', { class: 'row', style: { gap: '6px', flexWrap: 'wrap' } },
         (item.colors || []).map(c => h('div', {
-          class: 'chip', onclick: () => { filters.color = c.hex; modal.close(); emit(); }
+          class: 'chip', onclick: () => { filters.color = c.hex; nav.all = true; nav.catId = null; modal.close(); emit(); }
         }, h('span', { class: 'dot', style: { background: c.hex } }), colorName(c.hex)))
       )
     ),
@@ -205,8 +205,6 @@ export function openItemCard(item) {
 /* ---------- фильтрация ---------- */
 export function filteredItems() {
   let list = state.items.slice();
-  if (filters.catId) list = list.filter(i => i.catId === filters.catId);
-  if (filters.subId) list = list.filter(i => i.subId === filters.subId);
   if (filters.favOnly) list = list.filter(i => i.fav);
   if (filters.color) list = list.filter(i => itemMatchesColor(i, filters.color));
   const hue = i => {
@@ -322,34 +320,132 @@ function openSubManager(cat, onDone) {
   render();
 }
 
+/* ---------- навигация по гардеробу ---------- */
+/**
+ * Гардероб устроен как папки: список категорий → подкатегории → вещи.
+ * nav.catId пуст — показываем категории; есть категория без подкатегории —
+ * её подкатегории (или сразу вещи, если подкатегорий нет); есть обе — вещи.
+ * nav.all — плоский список всех вещей с фильтрами по цвету и избранному.
+ */
+export const OTHER = '__other';
+export const nav = { all: false, catId: null, subId: null };
+
+const goRoot = () => { nav.all = false; nav.catId = null; nav.subId = null; emit(); };
+const openCat = id => { nav.catId = id; nav.subId = null; emit(); };
+const openSub = id => { nav.subId = id; emit(); };
+
+/** Вещи раздела. subId === OTHER — те, что лежат в категории без подкатегории. */
+function itemsIn(catId, subId) {
+  const list = state.items.filter(i => i.catId === catId
+    && (subId == null || (subId === OTHER ? !i.subId : i.subId === subId)));
+  return list.sort((a, b) => b.createdAt - a.createdAt);
+}
+
+/** Последняя добавленная вещь раздела — её миниатюра стоит в строке списка. */
+const latestIn = (catId, subId) => itemsIn(catId, subId)[0] || null;
+
+/** Что показать в верхней панели: заголовок раздела и кнопку «назад». */
+export function closetNav() {
+  if (nav.all) return { title: 'Все вещи', back: goRoot };
+  const cat = catById(nav.catId);
+  if (!cat) return null;
+  if (!nav.subId) return { title: cat.name, back: goRoot };
+  const name = nav.subId === OTHER ? 'Другое' : subById(cat.id, nav.subId)?.name;
+  return { title: name || cat.name, back: () => { nav.subId = null; emit(); } };
+}
+
 /* ---------- рендер вкладки ---------- */
-export function renderCloset(root) {
-  const cats = state.cats;
-  const cur = catById(filters.catId);
-  const palette = closetColors();
 
-  const catChips = h('div', { class: 'chips' },
-    h('button', {
-      class: 'chip' + (!filters.catId ? ' active' : ''),
-      onclick: () => { filters.catId = null; filters.subId = null; emit(); }
-    }, 'Все', h('span', { class: 'cnt' }, state.items.length)),
-    ...cats.map(c => h('button', {
-      class: 'chip' + (filters.catId === c.id ? ' active' : ''),
-      onclick: () => { filters.catId = c.id; filters.subId = null; emit(); }
-    }, `${c.icon || ''} ${c.name}`, h('span', { class: 'cnt' }, countInCat(c.id)))),
-    h('button', { class: 'chip', onclick: openCategoryManager }, '⚙️')
+/** Строка списка: миниатюра, название, пояснение, стрелка вправо. */
+function navRow({ thumb, icon, title, note, muted, onclick }) {
+  return h('div', { class: 'lrow nav' + (muted ? ' soft' : ''), onclick },
+    thumb
+      ? h('img', { class: 'thumb', src: urlFor(thumb.img), style: { background: bgCss(thumb.bg) } })
+      : h('div', { class: 'thumb ph' }, icon || '📦'),
+    h('div', { class: 't' }, h('b', {}, title), note ? h('span', {}, note) : null),
+    h('span', { class: 'chev' }, '›')
   );
+}
 
-  const subChips = cur && cur.subs.length ? h('div', { class: 'chips' },
+const plural = (n, one, few, many) => {
+  const a = Math.abs(n) % 100, b = a % 10;
+  return n + ' ' + (a > 10 && a < 20 ? many : b === 1 ? one : b >= 2 && b <= 4 ? few : many);
+};
+
+const nItems = n => plural(n, 'вещь', 'вещи', 'вещей');
+
+/** Первый уровень: все вещи, служебные категории, затем обычные. */
+function renderRoot(root) {
+  const order = ['sorting', 'review'];
+  const system = state.cats.filter(c => c.system)
+    .sort((a, b) => order.indexOf(a.system) - order.indexOf(b.system));
+  const rest = state.cats.filter(c => !c.system).sort((a, b) => a.order - b.order);
+
+  fill(root,
+    h('div', { class: 'list' },
+      navRow({
+        thumb: state.items[0], icon: '🧺', title: 'Все вещи',
+        note: nItems(state.items.length),
+        onclick: () => { nav.all = true; emit(); }
+      }),
+      ...[...system, ...rest].map(c => navRow({
+        thumb: latestIn(c.id), icon: c.icon, title: c.name,
+        note: nItems(countInCat(c.id))
+          + (c.subs.length ? ' · ' + plural(c.subs.length, 'подкатегория', 'подкатегории', 'подкатегорий') : ''),
+        onclick: () => openCat(c.id)
+      }))
+    ),
     h('button', {
-      class: 'chip' + (!filters.subId ? ' active' : ''),
-      onclick: () => { filters.subId = null; emit(); }
-    }, 'Все'),
-    ...cur.subs.map(s => h('button', {
-      class: 'chip' + (filters.subId === s.id ? ' active' : ''),
-      onclick: () => { filters.subId = s.id; emit(); }
-    }, s.name, h('span', { class: 'cnt' }, state.items.filter(i => i.subId === s.id).length)))
-  ) : null;
+      class: 'btn block ghost', style: { marginTop: '14px' }, onclick: openCategoryManager
+    }, '⚙️ Управление категориями'),
+    h('button', { class: 'fab', onclick: startAddItem, title: 'Добавить вещь' }, '+')
+  );
+}
+
+/** Второй уровень: подкатегории. «Другое» появляется само, когда есть что показать. */
+function renderCat(root, cat) {
+  const loose = itemsIn(cat.id, OTHER).length;
+
+  fill(root,
+    h('div', { class: 'list' },
+      ...cat.subs.map(s => navRow({
+        thumb: latestIn(cat.id, s.id), icon: '📂', title: s.name,
+        note: nItems(itemsIn(cat.id, s.id).length),
+        onclick: () => openSub(s.id)
+      })),
+      // служебная строка: не хранится, не переименовывается, исчезает сама
+      loose ? navRow({
+        thumb: latestIn(cat.id, OTHER), icon: '📂', title: 'Другое', muted: true,
+        note: nItems(loose) + ' без подкатегории',
+        onclick: () => openSub(OTHER)
+      }) : null
+    ),
+    h('button', { class: 'fab', onclick: startAddItem, title: 'Добавить вещь' }, '+')
+  );
+}
+
+const itemTile = it => h('div', {
+  class: 'tile', style: { background: bgCss(it.bg) }, onclick: () => openItemCard(it)
+},
+  h('img', { src: urlFor(it.img), alt: it.name }),
+  it.fav ? h('span', { class: 'fav' }, '★') : null,
+  it.name ? h('span', { class: 'lbl' }, it.name) : null
+);
+
+/** Сетка вещей раздела. */
+function renderItems(root, list, emptyText) {
+  fill(root,
+    list.length ? h('div', { class: 'grid' }, list.map(itemTile)) : h('div', { class: 'empty' },
+      h('div', { class: 'big' }, '🧺'),
+      h('p', {}, emptyText)),
+    h('button', { class: 'fab', onclick: startAddItem, title: 'Добавить вещь' }, '+')
+  );
+}
+
+/** «Все вещи»: единственное место, где работают фильтры по цвету и избранному. */
+function renderAll(root) {
+  const palette = closetColors();
+  const list = filteredItems();
 
   const colorRow = h('div', { class: 'palette-row' },
     h('button', {
@@ -364,10 +460,8 @@ export function renderCloset(root) {
     }))
   );
 
-  const list = filteredItems();
-
   const controls = h('div', { class: 'row', style: { margin: '8px 0 4px' } },
-    h('span', { class: 'small muted spacer' }, `${list.length} вещей`),
+    h('span', { class: 'small muted spacer' }, nItems(list.length)),
     filters.color ? h('button', {
       class: 'chip active', onclick: () => { filters.color = null; emit(); }
     }, h('span', { class: 'dot', style: { background: filters.color } }), colorName(filters.color), ' ✕') : null,
@@ -383,22 +477,28 @@ export function renderCloset(root) {
         .map(([v, t]) => h('option', { value: v, selected: filters.sort === v }, t)))
   );
 
-  const grid = list.length ? h('div', { class: 'grid' },
-    list.map(it => h('div', {
-      class: 'tile', style: { background: bgCss(it.bg) }, onclick: () => openItemCard(it)
-    },
-      h('img', { src: urlFor(it.img), alt: it.name }),
-      it.fav ? h('span', { class: 'fav' }, '★') : null,
-      it.name ? h('span', { class: 'lbl' }, it.name) : null
-    ))
-  ) : h('div', { class: 'empty' },
-    h('div', { class: 'big' }, '🧺'),
-    // добавление живёт только на кнопке «+» — здесь лишь подсказка, куда нажать
-    h('p', {}, state.items.length
-      ? 'Ничего не найдено по фильтрам'
-      : 'Гардероб пуст. Чтобы добавить вещи, нажмите «+» внизу справа.')
+  fill(root, colorRow, controls,
+    list.length ? h('div', { class: 'grid' }, list.map(itemTile)) : h('div', { class: 'empty' },
+      h('div', { class: 'big' }, '🧺'),
+      h('p', {}, state.items.length
+        ? 'Ничего не найдено по фильтрам'
+        : 'Гардероб пуст. Чтобы добавить вещи, нажмите «+» внизу справа.')),
+    h('button', { class: 'fab', onclick: startAddItem, title: 'Добавить вещь' }, '+')
   );
+}
 
-  fill(root, catChips, subChips, colorRow, controls, grid,
-    h('button', { class: 'fab', onclick: startAddItem, title: 'Добавить вещь' }, '+'));
+export function renderCloset(root) {
+  if (nav.all) return renderAll(root);
+
+  const cat = catById(nav.catId);
+  if (!cat) { nav.catId = null; nav.subId = null; return renderRoot(root); }
+
+  // подкатегории показываем только там, где они есть
+  if (!nav.subId) {
+    return cat.subs.length
+      ? renderCat(root, cat)
+      : renderItems(root, itemsIn(cat.id), `В разделе «${cat.name}» пока пусто. Нажмите «+» внизу справа.`);
+  }
+  const name = nav.subId === OTHER ? 'Другое' : subById(cat.id, nav.subId)?.name || cat.name;
+  renderItems(root, itemsIn(cat.id, nav.subId), `В разделе «${name}» пока пусто.`);
 }

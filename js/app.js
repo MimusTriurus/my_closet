@@ -1,14 +1,14 @@
 // Точка входа: загрузка состояния, переключение вкладок, перерисовка.
 import { fill, qs, qsa, h } from './ui.js';
 import { loadAll, subscribe } from './state.js';
-import { renderCloset, startAddItem } from './closet.js';
+import { renderCloset, closetNav, startAddItem } from './closet.js';
 import { renderOutfits, openOutfitEditor } from './outfits.js';
 import { renderCalendar } from './calendar.js';
 import { renderPacking } from './packing.js';
 import { openSettings } from './settings.js';
 
 const TABS = {
-  closet: { title: 'Гардероб', render: renderCloset },
+  closet: { title: 'Гардероб', render: renderCloset, nav: closetNav },
   outfits: { title: 'Образы', render: renderOutfits },
   calendar: { title: 'Календарь', render: renderCalendar },
   packing: { title: 'Чемодан', render: renderPacking }
@@ -17,7 +17,15 @@ const TABS = {
 let current = 'closet';
 
 function renderTopbar() {
-  qs('#tb-title').textContent = TABS[current].title;
+  // вкладка может быть вложенной (гардероб ходит по категориям) —
+  // тогда она сама говорит, что написать в заголовке и куда ведёт «назад»
+  const inner = TABS[current].nav?.() || null;
+  qs('#tb-title').textContent = inner?.title || TABS[current].title;
+
+  const back = qs('#tb-back');
+  back.hidden = !inner?.back;
+  back.onclick = inner?.back || null;
+
   const actions = qs('#tb-actions');
   fill(actions, 
     current === 'outfits'

@@ -20,19 +20,26 @@ export const DEFAULT_CATS = [
   { name: 'Спорт', icon: '🏃', subs: ['Верх', 'Низ', 'Обувь'] }
 ];
 
-// Служебная категория: сюда попадают вещи, добавленные пачкой, до разбора.
-// Её нельзя удалить, подкатегорий у неё нет, но переименовать можно.
+/**
+ * Служебные категории. «Сортировка» — куда падает массовое добавление до разбора,
+ * «На рассмотрении» — вещи, которые ещё не куплены. Обе нельзя удалить, можно
+ * переименовать, подкатегорий у них нет, и в статистике гардероба они не считаются.
+ */
 export const SORTING_ICON = '🗃';
+export const SYSTEM_CATS = [
+  { system: 'sorting', name: 'Сортировка', icon: SORTING_ICON, order: -2 },
+  { system: 'review', name: 'На рассмотрении', icon: '🔍', order: -1 }
+];
 export const sortingCat = () => state.cats.find(c => c.system === 'sorting') || null;
+export const isSystemCat = id => !!catById(id)?.system;
 
-async function ensureSortingCat() {
-  if (sortingCat()) return;
-  const cat = {
-    id: uid('c'), name: 'Сортировка', icon: SORTING_ICON,
-    order: -1, custom: false, system: 'sorting', subs: []
-  };
-  state.cats.unshift(cat);
-  await dbPut('cats', cat);
+async function ensureSystemCats() {
+  for (const def of SYSTEM_CATS) {
+    if (state.cats.some(c => c.system === def.system)) continue;
+    const cat = { id: uid('c'), custom: false, subs: [], ...def };
+    state.cats.unshift(cat);
+    await dbPut('cats', cat);
+  }
 }
 
 /** Единая точка создания вещи — чтобы все новые поля появлялись в одном месте. */
@@ -90,7 +97,7 @@ export async function loadAll() {
   } else {
     state.cats = cats.sort((a, b) => a.order - b.order);
   }
-  await ensureSortingCat();
+  await ensureSystemCats();
 }
 
 /* ---------- items ---------- */
@@ -182,6 +189,11 @@ export function subById(catId, subId) {
   return catById(catId)?.subs.find(s => s.id === subId) || null;
 }
 export const countInCat = id => state.items.filter(i => i.catId === id).length;
+
+/** Вещи, которые считаются гардеробом: без служебных категорий. */
+export const closetCount = () => state.items.filter(i => !isSystemCat(i.catId)).length;
+export const countInSystem = system =>
+  countInCat(state.cats.find(c => c.system === system)?.id);
 
 /* ---------- calendar ---------- */
 export async function saveDay(day) {

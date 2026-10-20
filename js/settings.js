@@ -2,7 +2,7 @@
 // В приложении это Google Drive; в прототипе — обычный файл, логика та же.
 import { fill, h, openModal, toast, busy } from './ui.js';
 import { dbAll, dbPut, dbClear, STORES } from './db.js';
-import { state, loadAll, emit } from './state.js';
+import { state, loadAll, emit, closetCount, countInSystem } from './state.js';
 
 const BLOB_FIELDS = { items: ['img'], outfits: ['preview'] };
 
@@ -67,10 +67,14 @@ export function openSettings() {
   openModal({
     title: 'Настройки',
     body: h('div', {},
+      // в гардероб не входят служебные категории: «Сортировка» ещё не разобрана,
+      // а «На рассмотрении» — то, что пока не куплено
       h('div', { class: 'stat-row' },
-        h('div', { class: 'stat' }, h('b', {}, state.items.length), h('span', {}, 'вещей')),
+        h('div', { class: 'stat' }, h('b', {}, closetCount()), h('span', {}, 'вещей')),
         h('div', { class: 'stat' }, h('b', {}, state.outfits.length), h('span', {}, 'образов')),
         h('div', { class: 'stat' }, h('b', {}, state.trips.length), h('span', {}, 'поездок'))),
+      h('p', { class: 'muted small center', style: { margin: '8px 0 0' } },
+        `на рассмотрении ${countInSystem('review')} · не разобрано ${countInSystem('sorting')}`),
       h('div', { class: 'section-title' }, 'Резервная копия'),
       h('div', { class: 'list' },
         h('button', { class: 'btn block', onclick: exportAll }, '⬇️ Сохранить копию в файл'),

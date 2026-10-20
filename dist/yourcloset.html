@@ -612,6 +612,24 @@ function createItem(patch = {}) {
   };
 }
 
+/**
+ * Поездки раньше хранили образы и даты. Образы разворачиваем в вещи,
+ * даты убираем, добавляем признак «состоялась».
+ */
+async function migrateTrips() {
+  for (const t of state.trips) {
+    if (!('outfitIds' in t) && !('from' in t) && 'done' in t) continue;
+    const fromOutfits = (t.outfitIds || [])
+      .flatMap(id => (state.outfits.find(o => o.id === id)?.layers || []).map(l => l.itemId));
+    t.itemIds = [...new Set([...(t.itemIds || []), ...fromOutfits])];
+    t.done = t.done ?? false;
+    delete t.outfitIds;
+    delete t.from;
+    delete t.to;
+    await dbPut('trips', t);
+  }
+}
+
 async function loadAll() {
   const [items, outfits, collections, cats, calendar, trips] = await Promise.all(
     ['items', 'outfits', 'collections', 'cats', 'calendar', 'trips'].map(dbAll)
@@ -621,6 +639,7 @@ async function loadAll() {
   state.collections = collections;
   state.calendar = calendar;
   state.trips = trips.sort((a, b) => b.createdAt - a.createdAt);
+  await migrateTrips();
 
   if (!cats.length) {
     state.cats = DEFAULT_CATS.map((c, i) => ({
@@ -655,7 +674,11 @@ async function deleteItem(id) {
     if (d.itemIds?.includes(id)) { d.itemIds = d.itemIds.filter(x => x !== id); await dbPut('calendar', d); }
   }
   for (const t of state.trips) {
-    if (t.itemIds?.includes(id)) { t.itemIds = t.itemIds.filter(x => x !== id); await dbPut('trips', t); }
+    if (t.itemIds?.includes(id)) {
+      t.itemIds = t.itemIds.filter(x => x !== id);
+      if (t.checked) delete t.checked[id];
+      await dbPut('trips', t);
+    }
   }
   await dbDel('items', id);
   emit();
@@ -674,9 +697,6 @@ async function deleteOutfit(id) {
   state.outfits = state.outfits.filter(o => o.id !== id);
   for (const d of state.calendar) {
     if (d.outfitIds?.includes(id)) { d.outfitIds = d.outfitIds.filter(x => x !== id); await dbPut('calendar', d); }
-  }
-  for (const t of state.trips) {
-    if (t.outfitIds?.includes(id)) { t.outfitIds = t.outfitIds.filter(x => x !== id); await dbPut('trips', t); }
   }
   await dbDel('outfits', id);
   emit();
@@ -2087,12 +2107,48 @@ function renderCalendar(root) {
 }
 
 /* ===== packing.js ===== */
-// Вкладка «Чемодан»: списки вещей и образов на поездку с отметками «уложено».
+// Вкладка «Чемодан»: список вещей на поездку с отметками «уложено».
+// Поездка хранит только идентификаторы вещей — образы здесь не живут,
+// кнопка «из Образа» просто разворачивает образ в его вещи.
 
-function tripProgress(t) {
-  const total = (t.itemIds?.length || 0) + (t.outfitIds?.length || 0);
-  const done = Object.values(t.checked || {}).filter(Boolean).length;
-  return { total, done };
+let archiveOpen = false;
+
+const progress = t => ({
+  total: t.itemIds?.length || 0,
+  done: (t.itemIds || []).filter(id => t.checked?.[id]).length
+});
+
+/** Добавляет вещи, не трогая уже добавленные. Возвращает, сколько новых. */
+async function addItems(trip, ids) {
+  const have = new Set(trip.itemIds || []);
+  const alive = ids.filter(id => itemById(id));
+  const fresh = alive.filter(id => !have.has(id));
+  if (!alive.length) { toast('Добавлять нечего'); return 0; }
+  if (!fresh.length) { toast('Эти вещи уже в списке'); return 0; }
+  trip.itemIds = [...(trip.itemIds || []), ...fresh];
+  await saveTrip(trip);
+  toast(fresh.length === alive.length
+    ? `Добавлено ${fresh.length}`
+    : `Добавлено ${fresh.length}, уже были ${alive.length - fresh.length}`);
+  return fresh.length;
+}
+
+/** Выбор поездки, из которой копируются вещи (галочки не переносим). */
+function pickTrip(exceptId) {
+  return new Promise(res => {
+    const list = state.trips.filter(t => t.id !== exceptId);
+    let done = false;
+    const modal = openModal({
+      title: 'Из какой поездки',
+      body: list.length
+        ? h('div', { class: 'list' }, list.map(t => h('button', {
+          class: 'btn block', style: { textAlign: 'left' },
+          onclick: () => { done = true; res(t); modal.close(); }
+        }, `${t.done ? '✓ ' : ''}${t.name} · ${t.itemIds?.length || 0} вещей`)))
+        : h('div', { class: 'empty' }, 'Других поездок пока нет'),
+      onClose: () => { if (!done) res(null); }
+    });
+  });
 }
 
 function openTrip(trip) {
@@ -2101,86 +2157,150 @@ function openTrip(trip) {
 
   function render() {
     const items = (trip.itemIds || []).map(itemById).filter(Boolean);
-    const outfits = (trip.outfitIds || []).map(outfitById).filter(Boolean);
-    const { total, done } = tripProgress(trip);
+    const { total, done } = progress(trip);
 
-    fill(body, 
+    fill(body,
       h('div', { class: 'stat-row' },
         h('div', { class: 'stat' }, h('b', {}, `${done}/${total}`), h('span', {}, 'уложено')),
-        h('div', { class: 'stat' }, h('b', {}, outfits.length), h('span', {}, 'образов')),
-        h('div', { class: 'stat' }, h('b', {}, items.length), h('span', {}, 'вещей'))
+        h('div', { class: 'stat' }, h('b', {}, trip.done ? '✓' : '—'), h('span', {}, trip.done ? 'состоялась' : 'предстоит'))
       ),
-      trip.from ? h('p', { class: 'muted small center' }, `${fmtDate(trip.from)} — ${fmtDate(trip.to)}`) : null,
-      h('div', { class: 'row', style: { gap: '8px', margin: '10px 0' } },
-        h('button', {
-          class: 'btn primary', style: { flex: '1' }, onclick: async () => {
-            const ids = await pickOutfits({ selected: trip.outfitIds, title: 'Образы в поездку' });
-            if (ids) { trip.outfitIds = ids; await saveTrip(trip); render(); }
-          }
-        }, '👗 Образы'),
+
+      h('div', { class: 'section-title' }, 'Добавить вещи'),
+      h('div', { class: 'row', style: { gap: '8px' } },
         h('button', {
           class: 'btn', style: { flex: '1' }, onclick: async () => {
-            const ids = await pickItems({ selected: trip.itemIds, title: 'Вещи в поездку' });
-            if (ids) { trip.itemIds = ids; await saveTrip(trip); render(); }
+            const ids = await pickItems({ title: 'Вещи в поездку', selected: trip.itemIds || [] });
+            if (!ids) return;
+            // выбор приходит полным списком: что сняли — убираем
+            trip.itemIds = ids.filter(id => itemById(id));
+            await saveTrip(trip);
+            render();
           }
-        }, '🧺 Вещи')
+        }, '🧺 из Гардероба'),
+        h('button', {
+          class: 'btn', style: { flex: '1' }, onclick: async () => {
+            const ids = await pickOutfits({ title: 'Развернуть образ в вещи' });
+            if (!ids || !ids.length) return;
+            const fromOutfits = ids.flatMap(id => (outfitById(id)?.layers || []).map(l => l.itemId));
+            await addItems(trip, [...new Set(fromOutfits)]);
+            render();
+          }
+        }, '👗 из Образа'),
+        h('button', {
+          class: 'btn', style: { flex: '1' }, onclick: async () => {
+            const src = await pickTrip(trip.id);
+            if (!src) return;
+            await addItems(trip, src.itemIds || []);
+            render();
+          }
+        }, '🧳 из Поездки')
       ),
-      outfits.length ? h('div', { class: 'section-title' }, 'Образы') : null,
-      h('div', { class: 'list' }, outfits.map(o => row(o.id, o.preview, o.name || 'Образ', 'образ', o.bg))),
-      items.length ? h('div', { class: 'section-title' }, 'Вещи' ) : null,
-      h('div', { class: 'list' }, items.map(it => row(it.id, it.img, it.name || 'Вещь', '', it.bg))),
-      (!items.length && !outfits.length) ? h('div', { class: 'empty' }, 'Добавьте вещи и образы в чемодан') : null
+
+      items.length ? h('div', { class: 'section-title' }, `Список · ${total} вещей` ) : null,
+      h('div', { class: 'list' }, items.map(row)),
+      items.length ? null : h('div', { class: 'empty' }, 'Список пуст — добавьте вещи кнопками выше'),
+
+      h('div', { class: 'section-title' }, 'Поездка'),
+      h('div', { class: 'list' },
+        h('button', {
+          class: 'btn block', onclick: async () => {
+            trip.done = !trip.done;
+            await saveTrip(trip);
+            toast(trip.done ? 'Отмечена как состоявшаяся' : 'Возвращена в активные');
+            render();
+          }
+        }, trip.done ? '↩ Вернуть в активные' : '✓ Поездка состоялась'),
+        h('button', {
+          class: 'btn block', onclick: async () => {
+            const n = await promptDialog('Переименовать поездку', trip.name, 'Название');
+            if (!n) return;
+            trip.name = n;
+            await saveTrip(trip);
+            modal.root.querySelector('.modal-head h2').textContent = n;
+            render();
+          }
+        }, '✎ Переименовать'),
+        h('button', {
+          class: 'btn block danger', onclick: async () => {
+            if (await confirmDialog(`Удалить поездку «${trip.name}»? Вещи останутся в гардеробе.`)) {
+              await deleteTrip(trip.id);
+              modal.close();
+            }
+          }
+        }, '🗑 Удалить поездку')
+      )
     );
   }
 
-  function row(id, blob, title, sub, bg) {
-    const checked = !!trip.checked?.[id];
-    return h('label', { class: 'lrow', style: { opacity: checked ? .55 : 1 } },
-      h('img', { class: 'thumb', src: urlFor(blob), style: { background: bgCss(bg) } }),
-      h('div', { class: 't' }, h('b', { style: { textDecoration: checked ? 'line-through' : '' } }, title), sub ? h('span', {}, sub) : null),
+  function row(it) {
+    const checked = !!trip.checked?.[it.id];
+    return h('div', { class: 'lrow', style: { opacity: checked ? .55 : 1 } },
       h('input', {
-        type: 'checkbox', checked, style: { width: '22px', height: '22px', accentColor: 'var(--accent)' },
+        type: 'checkbox', checked,
+        style: { width: '22px', height: '22px', accentColor: 'var(--accent)', flex: '0 0 auto' },
         onchange: async e => {
           trip.checked = trip.checked || {};
-          trip.checked[id] = e.target.checked;
-          await saveTrip(trip); render();
+          trip.checked[it.id] = e.target.checked;
+          await saveTrip(trip);
+          render();
         }
-      })
+      }),
+      h('img', { class: 'thumb', src: urlFor(it.img), style: { background: bgCss(it.bg) } }),
+      h('div', { class: 't' },
+        h('b', { style: { textDecoration: checked ? 'line-through' : '' } }, it.name || 'Без названия')),
+      h('button', {
+        class: 'btn btn-sm', title: 'Убрать из поездки',
+        onclick: async () => {
+          trip.itemIds = trip.itemIds.filter(x => x !== it.id);
+          if (trip.checked) delete trip.checked[it.id];
+          await saveTrip(trip);
+          render();
+        }
+      }, '✕')
     );
   }
+
   render();
 }
 
 async function newTrip() {
-  const name = await promptDialog('Новая поездка', '', 'Куда едем?');
+  const name = await promptDialog('Новая поездка', '', 'Название, например «Лиссабон, май»');
   if (!name) return;
-  const today = new Date();
-  const later = new Date(Date.now() + 6 * 864e5);
-  const trip = { id: uid('tr'), name, from: iso(today), to: iso(later), itemIds: [], outfitIds: [], checked: {}, createdAt: Date.now() };
+  const trip = { id: uid('tr'), name, itemIds: [], checked: {}, done: false, createdAt: Date.now() };
   await saveTrip(trip);
   openTrip(trip);
 }
 
+function tripRow(t) {
+  const { total, done } = progress(t);
+  return h('div', { class: 'lrow', onclick: () => openTrip(t) },
+    h('div', { style: { fontSize: '26px', opacity: t.done ? .5 : 1 } }, '🧳'),
+    h('div', { class: 't' },
+      h('b', {}, t.name),
+      h('span', {}, t.done ? `состоялась · ${total} вещей` : `уложено ${done} из ${total}`))
+  );
+}
+
 function renderPacking(root) {
-  const list = state.trips;
-  fill(root, 
-    list.length ? h('div', { class: 'list' }, list.map(t => {
-      const { total, done } = tripProgress(t);
-      return h('div', { class: 'lrow', onclick: () => openTrip(t) },
-        h('div', { style: { fontSize: '26px' } }, '🧳'),
-        h('div', { class: 't' }, h('b', {}, t.name),
-          h('span', {}, `${fmtDate(t.from)} — ${fmtDate(t.to)} · уложено ${done}/${total}`)),
-        h('button', {
-          class: 'btn btn-sm danger', onclick: async e => {
-            e.stopPropagation();
-            if (await confirmDialog(`Удалить поездку «${t.name}»?`)) await deleteTrip(t.id);
-          }
-        }, '🗑')
-      );
-    })) : h('div', { class: 'empty' },
-      h('div', { class: 'big' }, '🧳'),
-      h('p', {}, 'Поездок пока нет'),
-      h('button', { class: 'btn primary', onclick: newTrip }, 'Собрать чемодан')),
+  const active = state.trips.filter(t => !t.done);
+  const archived = state.trips.filter(t => t.done);
+
+  fill(root,
+    active.length
+      ? h('div', { class: 'list' }, active.map(tripRow))
+      : h('div', { class: 'empty' },
+        h('div', { class: 'big' }, '🧳'),
+        h('p', {}, 'Поездок пока нет. Чтобы собрать чемодан, нажмите «+» внизу справа.')),
+
+    archived.length ? h('button', {
+      class: 'btn block', style: { marginTop: '18px', textAlign: 'left' },
+      onclick: () => { archiveOpen = !archiveOpen; emit(); }
+    }, `${archiveOpen ? '▾' : '▸'} Архив поездок · ${archived.length}`) : null,
+
+    archived.length && archiveOpen
+      ? h('div', { class: 'list', style: { marginTop: '8px' } }, archived.map(tripRow))
+      : null,
+
     h('button', { class: 'fab', onclick: newTrip }, '+')
   );
 }

@@ -52,6 +52,24 @@ export function createItem(patch = {}) {
   };
 }
 
+/**
+ * Поездки раньше хранили образы и даты. Образы разворачиваем в вещи,
+ * даты убираем, добавляем признак «состоялась».
+ */
+async function migrateTrips() {
+  for (const t of state.trips) {
+    if (!('outfitIds' in t) && !('from' in t) && 'done' in t) continue;
+    const fromOutfits = (t.outfitIds || [])
+      .flatMap(id => (state.outfits.find(o => o.id === id)?.layers || []).map(l => l.itemId));
+    t.itemIds = [...new Set([...(t.itemIds || []), ...fromOutfits])];
+    t.done = t.done ?? false;
+    delete t.outfitIds;
+    delete t.from;
+    delete t.to;
+    await dbPut('trips', t);
+  }
+}
+
 export async function loadAll() {
   const [items, outfits, collections, cats, calendar, trips] = await Promise.all(
     ['items', 'outfits', 'collections', 'cats', 'calendar', 'trips'].map(dbAll)
@@ -61,6 +79,7 @@ export async function loadAll() {
   state.collections = collections;
   state.calendar = calendar;
   state.trips = trips.sort((a, b) => b.createdAt - a.createdAt);
+  await migrateTrips();
 
   if (!cats.length) {
     state.cats = DEFAULT_CATS.map((c, i) => ({
@@ -95,7 +114,11 @@ export async function deleteItem(id) {
     if (d.itemIds?.includes(id)) { d.itemIds = d.itemIds.filter(x => x !== id); await dbPut('calendar', d); }
   }
   for (const t of state.trips) {
-    if (t.itemIds?.includes(id)) { t.itemIds = t.itemIds.filter(x => x !== id); await dbPut('trips', t); }
+    if (t.itemIds?.includes(id)) {
+      t.itemIds = t.itemIds.filter(x => x !== id);
+      if (t.checked) delete t.checked[id];
+      await dbPut('trips', t);
+    }
   }
   await dbDel('items', id);
   emit();
@@ -114,9 +137,6 @@ export async function deleteOutfit(id) {
   state.outfits = state.outfits.filter(o => o.id !== id);
   for (const d of state.calendar) {
     if (d.outfitIds?.includes(id)) { d.outfitIds = d.outfitIds.filter(x => x !== id); await dbPut('calendar', d); }
-  }
-  for (const t of state.trips) {
-    if (t.outfitIds?.includes(id)) { t.outfitIds = t.outfitIds.filter(x => x !== id); await dbPut('trips', t); }
   }
   await dbDel('outfits', id);
   emit();

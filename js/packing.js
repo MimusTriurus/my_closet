@@ -95,7 +95,7 @@ function openTrip(trip) {
         ),
         h('div', { class: 'row', style: { gap: '8px' } },
           h('button', {
-            class: 'btn btn-sm', style: { flex: '1' }, onclick: async () => {
+            class: 'btn btn-sm btn-add', style: { flex: '1' }, onclick: async () => {
               const ids = await pickItems({ title: 'Вещи в поездку', selected: trip.itemIds || [] });
               if (!ids) return;
               trip.itemIds = ids.filter(id => itemById(id));
@@ -104,7 +104,7 @@ function openTrip(trip) {
             }
           }, '🧺 Гардероб'),
           h('button', {
-            class: 'btn btn-sm', style: { flex: '1' }, onclick: async () => {
+            class: 'btn btn-sm btn-add', style: { flex: '1' }, onclick: async () => {
               const ids = await pickOutfits({ title: 'Развернуть образ в вещи' });
               if (!ids || !ids.length) return;
               const fromOutfits = ids.flatMap(id => (outfitById(id)?.layers || []).map(l => l.itemId));
@@ -113,7 +113,7 @@ function openTrip(trip) {
             }
           }, '👗 Образ'),
           h('button', {
-            class: 'btn btn-sm', style: { flex: '1' }, onclick: async () => {
+            class: 'btn btn-sm btn-add', style: { flex: '1' }, onclick: async () => {
               const src = await pickTrip(trip.id);
               if (!src) return;
               await addItems(trip, src.itemIds || []);

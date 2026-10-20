@@ -237,6 +237,13 @@ video#cam{width:100%;border-radius:var(--r);background:#000}
 .archive-bar b{font-weight:600}
 .fab.raised{bottom:calc(var(--tabh) + 70px)}
 
+/* кнопки добавления выделены цветом — это главное действие в поездке */
+.sticky-add .meta .section-title{color:var(--accent)}
+.btn-add{
+  background:var(--accent-soft);border-color:transparent;color:var(--accent);font-weight:650;
+}
+.btn-add:hover{border-color:var(--accent)}
+
 </style>
 
 <div id="app">
@@ -2216,7 +2223,7 @@ function openTrip(trip) {
         ),
         h('div', { class: 'row', style: { gap: '8px' } },
           h('button', {
-            class: 'btn btn-sm', style: { flex: '1' }, onclick: async () => {
+            class: 'btn btn-sm btn-add', style: { flex: '1' }, onclick: async () => {
               const ids = await pickItems({ title: 'Вещи в поездку', selected: trip.itemIds || [] });
               if (!ids) return;
               trip.itemIds = ids.filter(id => itemById(id));
@@ -2225,7 +2232,7 @@ function openTrip(trip) {
             }
           }, '🧺 Гардероб'),
           h('button', {
-            class: 'btn btn-sm', style: { flex: '1' }, onclick: async () => {
+            class: 'btn btn-sm btn-add', style: { flex: '1' }, onclick: async () => {
               const ids = await pickOutfits({ title: 'Развернуть образ в вещи' });
               if (!ids || !ids.length) return;
               const fromOutfits = ids.flatMap(id => (outfitById(id)?.layers || []).map(l => l.itemId));
@@ -2234,7 +2241,7 @@ function openTrip(trip) {
             }
           }, '👗 Образ'),
           h('button', {
-            class: 'btn btn-sm', style: { flex: '1' }, onclick: async () => {
+            class: 'btn btn-sm btn-add', style: { flex: '1' }, onclick: async () => {
               const src = await pickTrip(trip.id);
               if (!src) return;
               await addItems(trip, src.itemIds || []);

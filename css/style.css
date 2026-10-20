@@ -233,3 +233,10 @@ video#cam{width:100%;border-radius:var(--r);background:#000}
 }
 .archive-bar b{font-weight:600}
 .fab.raised{bottom:calc(var(--tabh) + 70px)}
+
+/* кнопки добавления выделены цветом — это главное действие в поездке */
+.sticky-add .meta .section-title{color:var(--accent)}
+.btn-add{
+  background:var(--accent-soft);border-color:transparent;color:var(--accent);font-weight:650;
+}
+.btn-add:hover{border-color:var(--accent)}

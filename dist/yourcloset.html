@@ -1833,21 +1833,13 @@ function openCategoryManager(scope = 'closet') {
           h('span', {}, `${nItems(countIn(c))} · ${plural(c.subs.length, 'подкатегория', 'подкатегории', 'подкатегорий')}`)),
         h('button', {
           class: 'btn btn-sm', onclick: async () => {
-            // служебную категорию можно только переименовать: ни подкатегорий, ни удаления
-            const act = await actionSheet(c.name, c.system ? [
-              { id: 'ren', icon: '✎', label: 'Переименовать' }
-            ] : [
-              { id: 'sub', icon: '➕', label: 'Добавить подкатегорию' },
-              { id: 'subs', icon: '📂', label: 'Подкатегории' },
+            // здесь — только действия над самой категорией. Её подкатегории
+            // настраиваются изнутри неё, кнопкой в заголовке раздела
+            const act = await actionSheet(c.name, [
               { id: 'ren', icon: '✎', label: 'Переименовать' },
               { id: 'del', icon: '🗑', label: 'Удалить категорию', danger: true }
             ]);
-            if (act === 'sub') {
-              const n = await promptDialog('Новая подкатегория');
-              if (n) { c.subs.push({ id: uid('s'), name: n }); await saveCat(c); render(); }
-            } else if (act === 'subs') {
-              openSubManager(c, render);
-            } else if (act === 'ren') {
+            if (act === 'ren') {
               const n = await promptDialog('Переименовать', c.name);
               if (n) { c.name = n; await saveCat(c); render(); }
             } else if (act === 'del') {
@@ -1978,19 +1970,18 @@ function closetNav() {
   const cat = curCat(nav.catId);
   if (!cat) return null;
   const up = nav.archive ? goArchive : goRoot;
-  // Названия рабочих полок не меняются — как и у архива: это не категории
-  // пользователя, а устройство приложения. Но «На рассмотрении» живёт долго
-  // и может потребовать разделения, поэтому подкатегории там есть
-  if (!nav.subId && cat.system) {
+  // Подкатегории настраиваются изнутри своей категории — и у гардероба,
+  // и у архива. Исключение «Сортировка»: это временная стопка, её разбирают,
+  // а не обустраивают. Названия рабочих полок не меняются, как и у архива
+  if (!nav.subId) {
     return {
       title: cat.name, back: up,
-      action: cat.system === 'review' ? {
+      action: cat.system === 'sorting' ? null : {
         icon: '📂', title: 'Подкатегории',
         onclick: () => openSubManager(cat, emit)
-      } : null
+      }
     };
   }
-  if (!nav.subId) return { title: cat.name, back: up };
   const name = nav.subId === OTHER ? 'Другое' : subById(cat.id, nav.subId)?.name;
   return { title: name || cat.name, back: () => { nav.subId = null; emit(); } };
 }

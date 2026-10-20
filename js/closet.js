@@ -259,7 +259,7 @@ export function openCategoryManager(scope = 'closet') {
 
   function render() {
     fill(body,
-      ...(arc ? archiveCats() : closetCats()).map(c => h('div', { class: 'lrow' },
+      ...(arc ? archiveCats() : closetCats().filter(c => !c.system)).map(c => h('div', { class: 'lrow' },
         h('div', { style: { fontSize: '22px' } }, c.icon || '📦'),
         h('div', { class: 't' },
           h('b', {}, c.name),
@@ -404,6 +404,20 @@ export function closetNav() {
   const cat = curCat(nav.catId);
   if (!cat) return null;
   const up = nav.archive ? goArchive : goRoot;
+  // служебные полки не значатся в «Управлении категориями» — там им нечего
+  // делать, кроме переименования. Переименовываются они изнутри себя
+  if (!nav.subId && cat.system) {
+    return {
+      title: cat.name, back: up,
+      action: {
+        icon: '✎', title: 'Переименовать',
+        onclick: async () => {
+          const n = await promptDialog('Переименовать', cat.name);
+          if (n) { cat.name = n; await saveCat(cat); }
+        }
+      }
+    };
+  }
   if (!nav.subId) return { title: cat.name, back: up };
   const name = nav.subId === OTHER ? 'Другое' : subById(cat.id, nav.subId)?.name;
   return { title: name || cat.name, back: () => { nav.subId = null; emit(); } };
@@ -546,14 +560,25 @@ async function moveSelected() {
  * Пока в разделе нет вещей, миниатюра остаётся пустой — подставлять вместо неё
  * значок незачем, гардероб наполняют фотографии, а не пиктограммы.
  */
-function navRow({ thumb, icon, title, note, muted, onclick }) {
+function navRow({ thumb, thumbNode, icon, title, note, muted, onclick }) {
   return h('div', { class: 'lrow nav' + (muted ? ' soft' : ''), onclick },
-    thumb
+    thumbNode || (thumb
       ? h('img', { class: 'thumb', src: urlFor(thumb.img), style: { background: bgCss(thumb.bg) } })
-      : h('div', { class: 'thumb ph' }, icon || ''),
+      : h('div', { class: 'thumb ph' }, icon || '')),
     h('div', { class: 't' }, h('b', {}, title), note ? h('span', {}, note) : null),
     h('span', { class: 'chev' }, '›')
   );
+}
+
+/**
+ * Миниатюра «Всех вещей» — мозаика из четырёх последних добавленных.
+ * Одна фотография повторяла бы картинку соседней строки.
+ */
+function collageThumb(items) {
+  const four = items.slice(0, 4);
+  if (!four.length) return h('div', { class: 'thumb ph' });
+  return h('div', { class: 'thumb grid4' },
+    four.map(it => h('img', { src: urlFor(it.img), style: { background: bgCss(it.bg) } })));
 }
 
 /** Закреплённая внизу строка: рабочие полки, которые не должны уезжать. */
@@ -593,7 +618,7 @@ function renderRoot(root) {
   fill(root,
     h('div', { class: 'list' },
       navRow({
-        thumb: visibleItems()[0], title: 'Все вещи',
+        thumbNode: collageThumb(visibleItems()), title: 'Все вещи',
         note: nItems(visibleItems().length),
         onclick: () => { nav.all = true; emit(); }
       }),

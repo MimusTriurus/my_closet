@@ -27,7 +27,12 @@ function renderTopbar() {
   back.onclick = inner?.back || null;
 
   const actions = qs('#tb-actions');
-  fill(actions, 
+  fill(actions,
+    inner?.action
+      ? h('button', {
+        class: 'icon-btn', title: inner.action.title, onclick: inner.action.onclick
+      }, inner.action.icon)
+      : null,
     current === 'outfits'
       ? h('button', { class: 'icon-btn', title: 'Новый образ', onclick: () => openOutfitEditor(null) }, '🎨')
       : null,

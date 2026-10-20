@@ -4,6 +4,7 @@
 CSS инлайнится, Konva берётся с jsdelivr. ИИ-удаление фона в веб-демо отключается —
 модель тянет свои wasm/onnx через fetch, который CSP артефактов блокирует.
 """
+import base64
 import io
 import os
 import re
@@ -84,6 +85,17 @@ def build():
         bundle.append(f'/* ===== {name} ===== */\n' + strip_module_syntax(src).strip())
     js = '\n\n'.join(bundle)
 
+    # шрифты и Konva встраиваем в файл: артефакт не может подтянуть их с диска,
+    # а внешние адреса нам не нужны ни здесь, ни в будущей мобильной сборке
+    fonts_css = read(os.path.join('fonts', 'fonts.css'))
+    for name in os.listdir(os.path.join(ROOT, 'fonts')):
+        if not name.endswith('.woff2'):
+            continue
+        blob = io.open(os.path.join(ROOT, 'fonts', name), 'rb').read()
+        uri = 'data:font/woff2;base64,' + base64.b64encode(blob).decode('ascii')
+        fonts_css = fonts_css.replace(f"'{name}'", f"'{uri}'")
+
+    konva = read(os.path.join('vendor', 'konva.min.js'))
     css = read(os.path.join('css', 'style.css'))
     body = read('index.html')
     # берём только разметку между <body> и <script>
@@ -93,12 +105,15 @@ def build():
     html = f"""<title>YourCloset</title>
 <style>
 :root {{ color-scheme: light; }}
+{fonts_css}
 {css}
 </style>
 
 {body}
 
-<script src="https://cdn.jsdelivr.net/npm/konva@9.3.16/konva.min.js"></script>
+<script>
+{konva}
+</script>
 <script type="module">
 {js}
 </script>

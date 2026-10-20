@@ -50,11 +50,12 @@ export function busy(on, text = 'Обработка…') {
 }
 
 /* ---- модальные окна ---- */
-export function openModal({ title, body, foot, full = false, onClose, closeText = '✕' }) {
+export function openModal({ title, body, foot, full = false, onClose, closeText = '✕', headAction }) {
   const bodyEl = h('div', { class: 'modal-body' }, body || '');
   const modal = h('div', { class: 'modal' + (full ? ' full' : '') },
     h('div', { class: 'modal-head' },
       h('h2', {}, title || ''),
+      headAction || null,
       h('button', { class: 'icon-btn', onclick: () => close() }, closeText)
     ),
     bodyEl,

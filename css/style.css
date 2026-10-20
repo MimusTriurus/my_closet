@@ -217,3 +217,17 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent-soft);bor
 video#cam{width:100%;border-radius:var(--r);background:#000}
 
 #busy[hidden]{display:none !important}
+
+/* ---------- чемодан ---------- */
+.sticky-add{
+  position:sticky;top:0;z-index:5;background:var(--bg);
+  margin:-12px -12px 10px;padding:10px 12px 8px;border-bottom:1px solid var(--line);
+}
+.trip-progress{font-size:12px;color:var(--muted);margin-top:7px;text-align:center}
+.archive-bar{
+  position:absolute;left:0;right:0;bottom:var(--tabh);z-index:25;
+  background:var(--surface);border-top:1px solid var(--line);
+  padding:10px 12px;display:flex;align-items:center;gap:8px;font-size:13px;
+}
+.archive-bar b{font-weight:600}
+.fab.raised{bottom:calc(var(--tabh) + 70px)}

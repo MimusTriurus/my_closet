@@ -7,8 +7,6 @@ import { uid } from './db.js';
 import { pickItems, pickOutfits } from './picker.js';
 import { bgCss } from './bgs.js';
 
-let archiveOpen = false;
-
 const progress = t => ({
   total: t.itemIds?.length || 0,
   done: (t.itemIds || []).filter(id => t.checked?.[id]).length
@@ -40,7 +38,7 @@ function pickTrip(exceptId) {
         ? h('div', { class: 'list' }, list.map(t => h('button', {
           class: 'btn block', style: { textAlign: 'left' },
           onclick: () => { done = true; res(t); modal.close(); }
-        }, `${t.done ? '✓ ' : ''}${t.name} · ${t.itemIds?.length || 0} вещей`)))
+        }, `${t.done ? '📦 ' : ''}${t.name} · ${t.itemIds?.length || 0} вещей`)))
         : h('div', { class: 'empty' }, 'Других поездок пока нет'),
       onClose: () => { if (!done) res(null); }
     });
@@ -49,82 +47,81 @@ function pickTrip(exceptId) {
 
 function openTrip(trip) {
   const body = h('div', {});
-  const modal = openModal({ title: trip.name, body, full: true, onClose: emit });
+  const modal = openModal({
+    title: trip.name, body, full: true, onClose: emit,
+    // действия над поездкой живут в шапке — иначе до них пришлось бы
+    // прокручивать весь список вещей
+    headAction: h('button', {
+      class: 'icon-btn', title: 'Действия с поездкой',
+      onclick: async () => {
+        const act = await actionSheet(trip.name, [
+          { id: 'arch', icon: trip.done ? '↩' : '📦', label: trip.done ? 'Вернуть из архива' : 'Переместить в архив' },
+          { id: 'ren', icon: '✎', label: 'Переименовать' },
+          { id: 'del', icon: '🗑', label: 'Удалить поездку', danger: true }
+        ]);
+        if (act === 'arch') {
+          trip.done = !trip.done;
+          await saveTrip(trip);
+          toast(trip.done ? 'Перемещена в архив' : 'Возвращена в активные');
+          render();
+        } else if (act === 'ren') {
+          const n = await promptDialog('Переименовать поездку', trip.name, 'Название');
+          if (!n) return;
+          trip.name = n;
+          await saveTrip(trip);
+          modal.root.querySelector('.modal-head h2').textContent = n;
+        } else if (act === 'del') {
+          if (await confirmDialog(`Удалить поездку «${trip.name}»? Вещи останутся в гардеробе.`)) {
+            await deleteTrip(trip.id);
+            modal.close();
+          }
+        }
+      }
+    }, '⋯')
+  });
 
   function render() {
     const items = (trip.itemIds || []).map(itemById).filter(Boolean);
     const { total, done } = progress(trip);
 
     fill(body,
-      h('div', { class: 'stat-row' },
-        h('div', { class: 'stat' }, h('b', {}, `${done}/${total}`), h('span', {}, 'уложено')),
-        h('div', { class: 'stat' }, h('b', {}, trip.done ? '✓' : '—'), h('span', {}, trip.done ? 'состоялась' : 'предстоит'))
-      ),
-
-      h('div', { class: 'section-title' }, 'Добавить вещи'),
-      h('div', { class: 'row', style: { gap: '8px' } },
-        h('button', {
-          class: 'btn', style: { flex: '1' }, onclick: async () => {
-            const ids = await pickItems({ title: 'Вещи в поездку', selected: trip.itemIds || [] });
-            if (!ids) return;
-            // выбор приходит полным списком: что сняли — убираем
-            trip.itemIds = ids.filter(id => itemById(id));
-            await saveTrip(trip);
-            render();
-          }
-        }, '🧺 из Гардероба'),
-        h('button', {
-          class: 'btn', style: { flex: '1' }, onclick: async () => {
-            const ids = await pickOutfits({ title: 'Развернуть образ в вещи' });
-            if (!ids || !ids.length) return;
-            const fromOutfits = ids.flatMap(id => (outfitById(id)?.layers || []).map(l => l.itemId));
-            await addItems(trip, [...new Set(fromOutfits)]);
-            render();
-          }
-        }, '👗 из Образа'),
-        h('button', {
-          class: 'btn', style: { flex: '1' }, onclick: async () => {
-            const src = await pickTrip(trip.id);
-            if (!src) return;
-            await addItems(trip, src.itemIds || []);
-            render();
-          }
-        }, '🧳 из Поездки')
-      ),
-
-      items.length ? h('div', { class: 'section-title' }, `Список · ${total} вещей` ) : null,
-      h('div', { class: 'list' }, items.map(row)),
-      items.length ? null : h('div', { class: 'empty' }, 'Список пуст — добавьте вещи кнопками выше'),
-
-      h('div', { class: 'section-title' }, 'Поездка'),
-      h('div', { class: 'list' },
-        h('button', {
-          class: 'btn block', onclick: async () => {
-            trip.done = !trip.done;
-            await saveTrip(trip);
-            toast(trip.done ? 'Отмечена как состоявшаяся' : 'Возвращена в активные');
-            render();
-          }
-        }, trip.done ? '↩ Вернуть в активные' : '✓ Поездка состоялась'),
-        h('button', {
-          class: 'btn block', onclick: async () => {
-            const n = await promptDialog('Переименовать поездку', trip.name, 'Название');
-            if (!n) return;
-            trip.name = n;
-            await saveTrip(trip);
-            modal.root.querySelector('.modal-head h2').textContent = n;
-            render();
-          }
-        }, '✎ Переименовать'),
-        h('button', {
-          class: 'btn block danger', onclick: async () => {
-            if (await confirmDialog(`Удалить поездку «${trip.name}»? Вещи останутся в гардеробе.`)) {
-              await deleteTrip(trip.id);
-              modal.close();
+      // закреплено под шапкой: добавление доступно на любой длине списка
+      h('div', { class: 'sticky-add' },
+        h('div', { class: 'row', style: { gap: '8px' } },
+          h('button', {
+            class: 'btn', style: { flex: '1' }, onclick: async () => {
+              const ids = await pickItems({ title: 'Вещи в поездку', selected: trip.itemIds || [] });
+              if (!ids) return;
+              trip.itemIds = ids.filter(id => itemById(id));
+              await saveTrip(trip);
+              render();
             }
-          }
-        }, '🗑 Удалить поездку')
-      )
+          }, '🧺 из Гардероба'),
+          h('button', {
+            class: 'btn', style: { flex: '1' }, onclick: async () => {
+              const ids = await pickOutfits({ title: 'Развернуть образ в вещи' });
+              if (!ids || !ids.length) return;
+              const fromOutfits = ids.flatMap(id => (outfitById(id)?.layers || []).map(l => l.itemId));
+              await addItems(trip, [...new Set(fromOutfits)]);
+              render();
+            }
+          }, '👗 из Образа'),
+          h('button', {
+            class: 'btn', style: { flex: '1' }, onclick: async () => {
+              const src = await pickTrip(trip.id);
+              if (!src) return;
+              await addItems(trip, src.itemIds || []);
+              render();
+            }
+          }, '🧳 из Поездки')
+        ),
+        h('div', { class: 'trip-progress' },
+          total ? `Уложено ${done} из ${total}` : 'Список пуст',
+          trip.done ? ' · в архиве' : '')
+      ),
+
+      h('div', { class: 'list' }, items.map(row)),
+      items.length ? null : h('div', { class: 'empty' }, 'Добавьте вещи кнопками выше')
     );
   }
 
@@ -173,8 +170,20 @@ function tripRow(t) {
     h('div', { style: { fontSize: '26px', opacity: t.done ? .5 : 1 } }, '🧳'),
     h('div', { class: 't' },
       h('b', {}, t.name),
-      h('span', {}, t.done ? `состоялась · ${total} вещей` : `уложено ${done} из ${total}`))
+      h('span', {}, t.done ? `в архиве · ${total} вещей` : `уложено ${done} из ${total}`))
   );
+}
+
+function openArchive() {
+  const body = h('div', {});
+  const modal = openModal({ title: 'Архив поездок', body, full: true, onClose: emit });
+  const render = () => {
+    const archived = state.trips.filter(t => t.done);
+    fill(body, archived.length
+      ? h('div', { class: 'list' }, archived.map(tripRow))
+      : h('div', { class: 'empty' }, 'Архив пуст'));
+  };
+  render();
 }
 
 export function renderPacking(root) {
@@ -186,17 +195,20 @@ export function renderPacking(root) {
       ? h('div', { class: 'list' }, active.map(tripRow))
       : h('div', { class: 'empty' },
         h('div', { class: 'big' }, '🧳'),
-        h('p', {}, 'Поездок пока нет. Чтобы собрать чемодан, нажмите «+» внизу справа.')),
+        h('p', {}, archived.length
+          ? 'Активных поездок нет — все лежат в архиве.'
+          : 'Поездок пока нет. Чтобы собрать чемодан, нажмите «+» внизу справа.')),
 
-    archived.length ? h('button', {
-      class: 'btn block', style: { marginTop: '18px', textAlign: 'left' },
-      onclick: () => { archiveOpen = !archiveOpen; emit(); }
-    }, `${archiveOpen ? '▾' : '▸'} Архив поездок · ${archived.length}`) : null,
+    // архив всегда на одном месте — закреплён над панелью вкладок
+    archived.length ? h('div', { class: 'archive-bar', onclick: openArchive },
+      h('span', {}, '📦'),
+      h('b', { class: 'spacer' }, 'Архив поездок'),
+      h('span', { class: 'muted' }, archived.length),
+      h('span', { class: 'muted' }, '›')
+    ) : null,
 
-    archived.length && archiveOpen
-      ? h('div', { class: 'list', style: { marginTop: '8px' } }, archived.map(tripRow))
-      : null,
-
-    h('button', { class: 'fab', onclick: newTrip }, '+')
+    h('button', { class: 'fab' + (archived.length ? ' raised' : ''), onclick: newTrip }, '+')
   );
+
+  root.style.paddingBottom = archived.length ? '140px' : '';
 }

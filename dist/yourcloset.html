@@ -1715,8 +1715,10 @@ function renderCloset(root) {
     ))
   ) : h('div', { class: 'empty' },
     h('div', { class: 'big' }, '🧺'),
-    h('p', {}, state.items.length ? 'Ничего не найдено по фильтрам' : 'Гардероб пуст. Добавьте первую вещь.'),
-    state.items.length ? null : h('button', { class: 'btn primary', onclick: startAddItem }, 'Добавить вещь')
+    // добавление живёт только на кнопке «+» — здесь лишь подсказка, куда нажать
+    h('p', {}, state.items.length
+      ? 'Ничего не найдено по фильтрам'
+      : 'Гардероб пуст. Нажмите + внизу справа, чтобы добавить первую вещь.')
   );
 
   fill(root, catChips, subChips, colorRow, controls, grid,

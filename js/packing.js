@@ -87,37 +87,40 @@ function openTrip(trip) {
     fill(body,
       // закреплено под шапкой: добавление доступно на любой длине списка
       h('div', { class: 'sticky-add' },
+        h('div', { class: 'meta' },
+          h('span', { class: 'section-title' }, 'Добавить вещи'),
+          h('span', { class: 'trip-progress' },
+            total ? `Уложено ${done} из ${total}` : 'Список пуст',
+            trip.done ? ' · в архиве' : '')
+        ),
         h('div', { class: 'row', style: { gap: '8px' } },
           h('button', {
-            class: 'btn', style: { flex: '1' }, onclick: async () => {
+            class: 'btn btn-sm', style: { flex: '1' }, onclick: async () => {
               const ids = await pickItems({ title: 'Вещи в поездку', selected: trip.itemIds || [] });
               if (!ids) return;
               trip.itemIds = ids.filter(id => itemById(id));
               await saveTrip(trip);
               render();
             }
-          }, '🧺 из Гардероба'),
+          }, '🧺 Гардероб'),
           h('button', {
-            class: 'btn', style: { flex: '1' }, onclick: async () => {
+            class: 'btn btn-sm', style: { flex: '1' }, onclick: async () => {
               const ids = await pickOutfits({ title: 'Развернуть образ в вещи' });
               if (!ids || !ids.length) return;
               const fromOutfits = ids.flatMap(id => (outfitById(id)?.layers || []).map(l => l.itemId));
               await addItems(trip, [...new Set(fromOutfits)]);
               render();
             }
-          }, '👗 из Образа'),
+          }, '👗 Образ'),
           h('button', {
-            class: 'btn', style: { flex: '1' }, onclick: async () => {
+            class: 'btn btn-sm', style: { flex: '1' }, onclick: async () => {
               const src = await pickTrip(trip.id);
               if (!src) return;
               await addItems(trip, src.itemIds || []);
               render();
             }
-          }, '🧳 из Поездки')
-        ),
-        h('div', { class: 'trip-progress' },
-          total ? `Уложено ${done} из ${total}` : 'Список пуст',
-          trip.done ? ' · в архиве' : '')
+          }, '🧳 Поездка')
+        )
       ),
 
       h('div', { class: 'list' }, items.map(row)),

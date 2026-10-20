@@ -42,7 +42,7 @@ main#views{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scro
 
 /* ---------- tabbar ---------- */
 #tabbar{
-  height:var(--tabh);flex:0 0 auto;display:grid;grid-template-columns:repeat(5,1fr);
+  height:var(--tabh);flex:0 0 auto;display:grid;grid-template-columns:repeat(4,1fr);
   background:var(--surface);border-top:1px solid var(--line);z-index:20;
 }
 #tabbar button{

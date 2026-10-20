@@ -5,15 +5,13 @@ import { renderCloset, startAddItem } from './closet.js';
 import { renderOutfits, openOutfitEditor } from './outfits.js';
 import { renderCalendar } from './calendar.js';
 import { renderPacking } from './packing.js';
-import { renderShop } from './shop.js';
 import { openSettings } from './settings.js';
 
 const TABS = {
   closet: { title: 'Гардероб', render: renderCloset },
   outfits: { title: 'Образы', render: renderOutfits },
   calendar: { title: 'Календарь', render: renderCalendar },
-  packing: { title: 'Чемодан', render: renderPacking },
-  shop: { title: 'Каталог', render: renderShop }
+  packing: { title: 'Чемодан', render: renderPacking }
 };
 
 let current = 'closet';

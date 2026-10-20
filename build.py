@@ -13,7 +13,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 # порядок важен: модули с top-level кодом должны идти после своих зависимостей
 ORDER = [
     'db.js', 'ui.js', 'color.js', 'bgs.js', 'state.js', 'editor.js', 'capture.js',
-    'picker.js', 'closet.js', 'outfits.js', 'calendar.js', 'packing.js', 'shop.js',
+    'picker.js', 'closet.js', 'outfits.js', 'calendar.js', 'packing.js',
     'settings.js', 'app.js',
 ]
 
@@ -43,9 +43,6 @@ def patch_for_web(name, src):
             "    toast('ИИ-вырезание недоступно в веб-демо — уберите фон «Палочкой»', 3800);\n"
             "    return;\n"
         )
-    if name == 'shop.js':
-        # динамический import в одном файле не нужен — функция уже в области видимости
-        src = src.replace("          const { openOutfitEditor } = await import('./outfits.js');\n", '')
     if name == 'capture.js':
         src = src.replace(
             "  toast(location.protocol === 'file:'\n"

@@ -259,6 +259,20 @@ video#cam{width:100%;border-radius:var(--r);background:#000}
 }
 .archive-bar b{font-weight:600}
 
+/* закреплённые внизу рабочие полки гардероба: «Сортировка», «На рассмотрении», архив */
+.pinned-bottom{
+  position:absolute;left:0;right:0;bottom:var(--tabh);z-index:25;
+  background:var(--surface);border-top:1px solid var(--line);
+}
+.pinned-bottom:empty{display:none}
+.service-bar{
+  height:42px;padding:0 12px;display:flex;align-items:center;gap:8px;font-size:13px;
+  border-top:1px solid var(--line);cursor:pointer;
+}
+.service-bar:first-child{border-top:0}
+.service-bar:hover{background:var(--bg)}
+.service-bar b{font-weight:600}
+
 /* полоска действий над выделенными вещами — на месте архивной */
 .select-bar{
   position:absolute;left:0;right:0;bottom:var(--tabh);z-index:25;

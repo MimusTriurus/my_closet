@@ -301,6 +301,20 @@ video#cam{width:100%;border-radius:var(--r);background:#000}
 }
 .archive-bar b{font-weight:600}
 
+/* закреплённые внизу рабочие полки гардероба: «Сортировка», «На рассмотрении», архив */
+.pinned-bottom{
+  position:absolute;left:0;right:0;bottom:var(--tabh);z-index:25;
+  background:var(--surface);border-top:1px solid var(--line);
+}
+.pinned-bottom:empty{display:none}
+.service-bar{
+  height:42px;padding:0 12px;display:flex;align-items:center;gap:8px;font-size:13px;
+  border-top:1px solid var(--line);cursor:pointer;
+}
+.service-bar:first-child{border-top:0}
+.service-bar:hover{background:var(--bg)}
+.service-bar b{font-weight:600}
+
 /* полоска действий над выделенными вещами — на месте архивной */
 .select-bar{
   position:absolute;left:0;right:0;bottom:var(--tabh);z-index:25;
@@ -1906,6 +1920,8 @@ function openSubManager(cat, onDone) {
  * nav.archive — то же дерево, но по архивным вещам и архивным категориям.
  */
 const OTHER = '__other';
+// высота закреплённой строки внизу — должна совпадать с .service-bar в стилях
+const SERVICE_BAR_H = 42;
 const nav = { all: false, archive: false, catId: null, subId: null };
 
 const goRoot = () => { nav.all = false; nav.archive = false; nav.catId = null; nav.subId = null; emit(); };
@@ -2085,14 +2101,28 @@ async function moveSelected() {
 
 /* ---------- рендер вкладки ---------- */
 
-/** Строка списка: миниатюра, название, пояснение, стрелка вправо. */
+/**
+ * Строка списка: миниатюра, название, пояснение, стрелка вправо.
+ * Пока в разделе нет вещей, миниатюра остаётся пустой — подставлять вместо неё
+ * значок незачем, гардероб наполняют фотографии, а не пиктограммы.
+ */
 function navRow({ thumb, icon, title, note, muted, onclick }) {
   return h('div', { class: 'lrow nav' + (muted ? ' soft' : ''), onclick },
     thumb
       ? h('img', { class: 'thumb', src: urlFor(thumb.img), style: { background: bgCss(thumb.bg) } })
-      : h('div', { class: 'thumb ph' }, icon || '📦'),
+      : h('div', { class: 'thumb ph' }, icon || ''),
     h('div', { class: 't' }, h('b', {}, title), note ? h('span', {}, note) : null),
     h('span', { class: 'chev' }, '›')
+  );
+}
+
+/** Закреплённая внизу строка: рабочие полки, которые не должны уезжать. */
+function serviceBar({ icon, title, count, onclick }) {
+  return h('div', { class: 'service-bar', onclick },
+    h('span', {}, icon),
+    h('b', { class: 'spacer' }, title),
+    count ? h('span', { class: 'muted' }, count) : null,
+    h('span', { class: 'muted' }, '›')
   );
 }
 
@@ -2108,15 +2138,27 @@ function renderRoot(root) {
   // иначе до них будет не добраться
   const hasArchive = archived || archiveCats().length;
 
+  // «Сортировка», «На рассмотрении» и архив — рабочие полки, а не гардероб.
+  // Они закреплены внизу: при листании категорий их место не меняется
+  const bars = [
+    ...system.map(c => serviceBar({
+      icon: c.icon, title: c.name, count: countInCat(c.id), onclick: () => openCat(c.id)
+    })),
+    hasArchive ? serviceBar({
+      icon: '📦', title: 'Архив вещей', count: archived, onclick: goArchive
+    }) : null
+  ].filter(Boolean);
+  const barsH = bars.length * SERVICE_BAR_H + 1;
+
   fill(root,
     h('div', { class: 'list' },
       navRow({
-        thumb: visibleItems()[0], icon: '🧺', title: 'Все вещи',
+        thumb: visibleItems()[0], title: 'Все вещи',
         note: nItems(visibleItems().length),
         onclick: () => { nav.all = true; emit(); }
       }),
-      ...[...system, ...rest].map(c => navRow({
-        thumb: latestIn(c.id, null, false), icon: c.icon, title: c.name,
+      ...rest.map(c => navRow({
+        thumb: latestIn(c.id, null, false), title: c.name,
         note: nItems(countInCat(c.id))
           + (c.subs.length ? ' · ' + plural(c.subs.length, 'подкатегория', 'подкатегории', 'подкатегорий') : ''),
         onclick: () => openCat(c.id)
@@ -2126,17 +2168,15 @@ function renderRoot(root) {
       class: 'btn block ghost', style: { marginTop: '14px' }, onclick: () => openCategoryManager()
     }, '⚙️ Управление категориями'),
 
-    // архив всегда на одном месте — закреплён над панелью вкладок
-    hasArchive ? h('div', { class: 'archive-bar', onclick: goArchive },
-      h('span', {}, '📦'),
-      h('b', { class: 'spacer' }, 'Архив вещей'),
-      archived ? h('span', { class: 'muted' }, archived) : null,
-      h('span', { class: 'muted' }, '›')
-    ) : null,
+    h('div', { class: 'pinned-bottom' }, bars),
 
-    h('button', { class: 'fab' + (hasArchive ? ' raised' : ''), onclick: startAddItem, title: 'Добавить вещь' }, '+')
+    h('button', {
+      class: 'fab', style: { bottom: `calc(var(--tabh) + ${barsH + 14}px)` },
+      onclick: startAddItem, title: 'Добавить вещь'
+    }, '+')
   );
-  root.style.paddingBottom = hasArchive ? '140px' : '';
+  // запас, чтобы «Управление категориями» не оказалось под круглой кнопкой
+  root.style.paddingBottom = barsH + 74 + 'px';
 }
 
 /** Первый уровень архива: его собственные категории плюс «Другое». */

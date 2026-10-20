@@ -1,7 +1,11 @@
 // Вкладка «Гардероб»: категории, подкатегории, фильтр по цвету, сортировка, карточка вещи.
-import { fill, h, qs, urlFor, toast, openModal, confirmDialog, promptDialog, actionSheet, busy } from './ui.js';
 import {
-  state, saveItem, deleteItem, saveCat, deleteCat, catById, subById, countInCat,
+  fill, h, qs, urlFor, toast, openModal, confirmDialog, promptDialog, actionSheet,
+  alertDialog, busy, plural, nItems
+} from './ui.js';
+import {
+  state, saveItem, saveItems, deleteItem, saveCat, deleteCat, catById, subById, countInCat,
+  visibleItems, itemById,
   createItem, sortingCat, emit
 } from './state.js';
 import { uid } from './db.js';
@@ -204,7 +208,7 @@ export function openItemCard(item) {
 
 /* ---------- фильтрация ---------- */
 export function filteredItems() {
-  let list = state.items.slice();
+  let list = visibleItems();
   if (filters.favOnly) list = list.filter(i => i.fav);
   if (filters.color) list = list.filter(i => itemMatchesColor(i, filters.color));
   const hue = i => {
@@ -226,7 +230,7 @@ export function filteredItems() {
 function closetColors() {
   // группируем цвета вещей по базовой палитре
   const counts = new Map();
-  for (const it of state.items) {
+  for (const it of visibleItems()) {
     const seen = new Set();
     for (const c of it.colors || []) {
       if (c.ratio < 0.08) continue;
@@ -272,7 +276,15 @@ export function openCategoryManager() {
               const n = await promptDialog('Переименовать', c.name);
               if (n) { c.name = n; await saveCat(c); render(); }
             } else if (act === 'del') {
-              if (await confirmDialog(`Удалить «${c.name}»? Вещи останутся, но потеряют категорию.`)) {
+              // непустую категорию не удаляем: иначе её вещи разом остались бы
+              // без места. Сначала перенос — он есть прямо в разделе
+              const n = countInCat(c.id);
+              if (n) {
+                await alertDialog(
+                  `В категории «${c.name}» ${nItems(n)}. Откройте её, нажмите «Выбрать» и переместите вещи — `
+                  + 'после этого категорию можно будет удалить.',
+                  'Категория не пуста');
+              } else if (await confirmDialog(`Удалить «${c.name}»?`)) {
                 await deleteCat(c.id); render();
               }
             }
@@ -299,7 +311,7 @@ function openSubManager(cat, onDone) {
     fill(body, 
       ...cat.subs.map(s => h('div', { class: 'lrow' },
         h('div', { class: 't' }, h('b', {}, s.name),
-          h('span', {}, state.items.filter(i => i.subId === s.id).length + ' вещей')),
+          h('span', {}, nItems(visibleItems().filter(i => i.subId === s.id).length))),
         h('button', {
           class: 'btn btn-sm', onclick: async () => {
             const n = await promptDialog('Переименовать', s.name);
@@ -334,10 +346,16 @@ const goRoot = () => { nav.all = false; nav.catId = null; nav.subId = null; emit
 const openCat = id => { nav.catId = id; nav.subId = null; emit(); };
 const openSub = id => { nav.subId = id; emit(); };
 
-/** Вещи раздела. subId === OTHER — те, что лежат в категории без подкатегории. */
+/**
+ * Вещи раздела. subId === OTHER — те, что лежат в категории без подкатегории.
+ * Ссылка на удалённую подкатегорию считается отсутствующей: иначе вещь пропала бы
+ * и из списка подкатегорий, и из «Другого», то есть из категории целиком.
+ */
 function itemsIn(catId, subId) {
-  const list = state.items.filter(i => i.catId === catId
-    && (subId == null || (subId === OTHER ? !i.subId : i.subId === subId)));
+  const subs = new Set((catById(catId)?.subs || []).map(s => s.id));
+  const sub = i => (subs.has(i.subId) ? i.subId : null);
+  const list = visibleItems().filter(i => i.catId === catId
+    && (subId == null || (subId === OTHER ? !sub(i) : sub(i) === subId)));
   return list.sort((a, b) => b.createdAt - a.createdAt);
 }
 
@@ -354,6 +372,80 @@ export function closetNav() {
   return { title: name || cat.name, back: () => { nav.subId = null; emit(); } };
 }
 
+/* ---------- множественный выбор ---------- */
+/**
+ * Выделение работает только внутри раздела, где видно, куда вещь положена.
+ * В «Все вещи» его нет намеренно: там вещь вырвана из контекста, и перенос
+ * вслепую слишком легко сделать не туда. Удаления здесь тоже нет — только
+ * перенос, который всегда можно повторить.
+ */
+let selection = null;      // Set с id, пока режим включён
+let selectionKey = null;   // раздел, в котором его включили
+
+const sectionKey = () => `${nav.catId || ''}/${nav.subId || ''}`;
+const selectionOn = () => {
+  if (selection && selectionKey !== sectionKey()) selection = null;
+  return !!selection;
+};
+function toggleSelection(on) {
+  selection = on ? new Set() : null;
+  selectionKey = sectionKey();
+  emit();
+}
+
+/** Куда переместить: сначала категория, затем её подкатегория. */
+function pickDestination() {
+  return new Promise(res => {
+    let done = false;
+    const body = h('div', {});
+    const finish = v => { done = true; res(v); modal.close(); };
+    const modal = openModal({
+      title: 'Переместить в…', body, full: true,
+      onClose: () => { if (!done) res(null); }
+    });
+
+    const showCats = () => fill(body, h('div', { class: 'list' },
+      ...state.cats.map(c => navRow({
+        thumb: latestIn(c.id), icon: c.icon, title: c.name,
+        note: c.subs.length
+          ? plural(c.subs.length, 'подкатегория', 'подкатегории', 'подкатегорий')
+          : nItems(countInCat(c.id)),
+        onclick: () => c.subs.length ? showSubs(c) : finish({ catId: c.id, subId: null })
+      }))
+    ));
+
+    const showSubs = cat => fill(body,
+      h('button', { class: 'btn btn-sm', onclick: showCats }, '‹ Все категории'),
+      h('div', { class: 'section-title' }, cat.name),
+      h('div', { class: 'list' },
+        ...cat.subs.map(s => navRow({
+          thumb: latestIn(cat.id, s.id), icon: '📂', title: s.name,
+          note: nItems(itemsIn(cat.id, s.id).length),
+          onclick: () => finish({ catId: cat.id, subId: s.id })
+        })),
+        navRow({
+          icon: '📂', title: 'Без подкатегории', muted: true,
+          note: 'в саму категорию, в «Другое»',
+          onclick: () => finish({ catId: cat.id, subId: null })
+        })
+      )
+    );
+
+    showCats();
+  });
+}
+
+async function moveSelected() {
+  const dest = await pickDestination();
+  if (!dest) return;
+  const items = [...selection].map(itemById).filter(Boolean);
+  items.forEach(it => { it.catId = dest.catId; it.subId = dest.subId; });
+  selection = null;                 // гасим режим до сохранения: оно перерисует экран
+  await saveItems(items);
+  const sub = dest.subId ? subById(dest.catId, dest.subId) : null;
+  toast(`${nItems(items.length)} → ${catById(dest.catId)?.name}${sub ? ' › ' + sub.name : ''}`, 3000);
+}
+
 /* ---------- рендер вкладки ---------- */
 
 /** Строка списка: миниатюра, название, пояснение, стрелка вправо. */
@@ -367,12 +459,7 @@ function navRow({ thumb, icon, title, note, muted, onclick }) {
   );
 }
 
-const plural = (n, one, few, many) => {
-  const a = Math.abs(n) % 100, b = a % 10;
-  return n + ' ' + (a > 10 && a < 20 ? many : b === 1 ? one : b >= 2 && b <= 4 ? few : many);
-};
 
-const nItems = n => plural(n, 'вещь', 'вещи', 'вещей');
 
 /** Первый уровень: все вещи, служебные категории, затем обычные. */
 function renderRoot(root) {
@@ -384,8 +471,8 @@ function renderRoot(root) {
   fill(root,
     h('div', { class: 'list' },
       navRow({
-        thumb: state.items[0], icon: '🧺', title: 'Все вещи',
-        note: nItems(state.items.length),
+        thumb: visibleItems()[0], icon: '🧺', title: 'Все вещи',
+        note: nItems(visibleItems().length),
         onclick: () => { nav.all = true; emit(); }
       }),
       ...[...system, ...rest].map(c => navRow({
@@ -424,22 +511,56 @@ function renderCat(root, cat) {
   );
 }
 
-const itemTile = it => h('div', {
-  class: 'tile', style: { background: bgCss(it.bg) }, onclick: () => openItemCard(it)
-},
-  h('img', { src: urlFor(it.img), alt: it.name }),
-  it.fav ? h('span', { class: 'fav' }, '★') : null,
-  it.name ? h('span', { class: 'lbl' }, it.name) : null
-);
+const itemTile = (it, selectable = false) => {
+  const picked = selectable && selection.has(it.id);
+  return h('div', {
+    class: 'tile' + (picked ? ' sel' : ''), style: { background: bgCss(it.bg) },
+    onclick: () => {
+      if (!selectable) return openItemCard(it);
+      picked ? selection.delete(it.id) : selection.add(it.id);
+      emit();
+    }
+  },
+    h('img', { src: urlFor(it.img), alt: it.name }),
+    it.fav && !selectable ? h('span', { class: 'fav' }, '★') : null,
+    selectable ? h('span', { class: 'check' + (picked ? ' on' : '') }, picked ? '✓' : '') : null,
+    it.name ? h('span', { class: 'lbl' }, it.name) : null
+  );
+};
 
-/** Сетка вещей раздела. */
+/** Сетка вещей раздела — единственное место, где работает множественный выбор. */
 function renderItems(root, list, emptyText) {
+  const on = selectionOn();
+  const all = on && list.length && list.every(i => selection.has(i.id));
+
   fill(root,
-    list.length ? h('div', { class: 'grid' }, list.map(itemTile)) : h('div', { class: 'empty' },
+    h('div', { class: 'row', style: { margin: '2px 0 8px' } },
+      h('span', { class: 'small muted spacer' }, on ? `Выбрано ${selection.size}` : nItems(list.length)),
+      list.length ? h('button', {
+        class: 'btn btn-sm', onclick: () => toggleSelection(!on)
+      }, on ? 'Отмена' : 'Выбрать') : null
+    ),
+
+    list.length ? h('div', { class: 'grid' }, list.map(it => itemTile(it, on))) : h('div', { class: 'empty' },
       h('div', { class: 'big' }, '🧺'),
       h('p', {}, emptyText)),
-    h('button', { class: 'fab', onclick: startAddItem, title: 'Добавить вещь' }, '+')
+
+    on ? h('div', { class: 'select-bar' },
+      h('button', {
+        class: 'btn btn-sm', onclick: () => {
+          selection = all ? new Set() : new Set(list.map(i => i.id));
+          emit();
+        }
+      }, all ? 'Снять все' : 'Выбрать все'),
+      h('span', { class: 'spacer' }),
+      h('button', {
+        class: 'btn btn-sm btn-add', disabled: !selection.size, onclick: moveSelected
+      }, 'Переместить в…')
+    ) : null,
+
+    on ? null : h('button', { class: 'fab', onclick: startAddItem, title: 'Добавить вещь' }, '+')
   );
+  root.style.paddingBottom = on ? '140px' : '';
 }
 
 /** «Все вещи»: единственное место, где работают фильтры по цвету и избранному. */
@@ -478,9 +599,9 @@ function renderAll(root) {
   );
 
   fill(root, colorRow, controls,
-    list.length ? h('div', { class: 'grid' }, list.map(itemTile)) : h('div', { class: 'empty' },
+    list.length ? h('div', { class: 'grid' }, list.map(it => itemTile(it))) : h('div', { class: 'empty' },
       h('div', { class: 'big' }, '🧺'),
-      h('p', {}, state.items.length
+      h('p', {}, visibleItems().length
         ? 'Ничего не найдено по фильтрам'
         : 'Гардероб пуст. Чтобы добавить вещи, нажмите «+» внизу справа.')),
     h('button', { class: 'fab', onclick: startAddItem, title: 'Добавить вещь' }, '+')

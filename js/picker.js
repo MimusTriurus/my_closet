@@ -1,6 +1,6 @@
 // Универсальный выбор вещей / образов (для образов, календаря, чемодана).
 import { fill, h, openModal, urlFor } from './ui.js';
-import { state, catById } from './state.js';
+import { state, catById, visibleItems } from './state.js';
 import { bgCss } from './bgs.js';
 
 export function pickItems({ title = 'Выбрать вещи', selected = [], multi = true } = {}) {
@@ -15,7 +15,7 @@ export function pickItems({ title = 'Выбрать вещи', selected = [], mu
     function renderChips() {
       fill(chips, 
         h('button', { class: 'chip' + (!catId ? ' active' : ''), onclick: () => { catId = null; renderChips(); renderGrid(); } }, 'Все'),
-        ...state.cats.filter(c => state.items.some(i => i.catId === c.id)).map(c =>
+        ...state.cats.filter(c => visibleItems().some(i => i.catId === c.id)).map(c =>
           h('button', {
             class: 'chip' + (catId === c.id ? ' active' : ''),
             onclick: () => { catId = c.id; renderChips(); renderGrid(); }
@@ -23,7 +23,7 @@ export function pickItems({ title = 'Выбрать вещи', selected = [], mu
       );
     }
     function renderGrid() {
-      const list = state.items.filter(i => !catId || i.catId === catId);
+      const list = visibleItems().filter(i => !catId || i.catId === catId);
       fill(grid, ...list.map(it => h('div', {
         class: 'tile' + (sel.has(it.id) ? ' sel' : ''),
         style: { background: bgCss(it.bg) },

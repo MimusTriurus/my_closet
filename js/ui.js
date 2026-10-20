@@ -124,6 +124,25 @@ export function actionSheet(title, actions) {
   });
 }
 
+/** Сообщение без выбора — когда действие не выполнено и надо объяснить почему. */
+export function alertDialog(text, title = 'Так нельзя') {
+  return new Promise(res => {
+    let answered = false;
+    const m = openModal({
+      title,
+      body: h('p', { style: { margin: '4px 0 8px' } }, text),
+      foot: [h('button', { class: 'btn primary', onclick: () => { answered = true; res(); m.close(); } }, 'Понятно')],
+      onClose: () => { if (!answered) res(); }
+    });
+  });
+}
+
+export const plural = (n, one, few, many) => {
+  const a = Math.abs(n) % 100, b = a % 10;
+  return n + ' ' + (a > 10 && a < 20 ? many : b === 1 ? one : b >= 2 && b <= 4 ? few : many);
+};
+export const nItems = n => plural(n, 'вещь', 'вещи', 'вещей');
+
 export const fmtDate = d => {
   const dt = typeof d === 'string' ? new Date(d + 'T00:00:00') : d;
   return dt.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });

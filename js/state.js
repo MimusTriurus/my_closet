@@ -1,5 +1,6 @@
 // Единое состояние приложения + персистентность в IndexedDB.
 import { dbAll, dbPut, dbDel, uid } from './db.js';
+import { nItems } from './ui.js';
 
 export const state = {
   items: [], outfits: [], collections: [], cats: [], calendar: [], trips: []
@@ -40,6 +41,28 @@ async function ensureSystemCats() {
     state.cats.unshift(cat);
     await dbPut('cats', cat);
   }
+}
+
+/** Сообщения, которые показываются сразу после загрузки: что приложение починило само. */
+export const notices = [];
+
+/**
+ * Вещь без категории в гардеробе не видна — отдельного списка «без категории» нет
+ * и не будет. Такие вещи приходят из старых резервных копий; отправляем их
+ * в «Сортировку», где и лежит всё неразобранное.
+ */
+async function adoptOrphans() {
+  const cat = sortingCat();
+  if (!cat) return;
+  const lost = state.items.filter(i => !catById(i.catId));
+  for (const it of lost) {
+    it.catId = cat.id;
+    it.subId = null;
+    await dbPut('items', it);
+  }
+  if (lost.length) notices.push(lost.length === 1
+    ? `Вещь без категории перенесена в «${cat.name}»`
+    : `${nItems(lost.length)} без категории перенесены в «${cat.name}»`);
 }
 
 /** Единая точка создания вещи — чтобы все новые поля появлялись в одном месте. */
@@ -98,6 +121,7 @@ export async function loadAll() {
     state.cats = cats.sort((a, b) => a.order - b.order);
   }
   await ensureSystemCats();
+  await adoptOrphans();
 }
 
 /* ---------- items ---------- */
@@ -131,6 +155,24 @@ export async function deleteItem(id) {
   emit();
 }
 export const itemById = id => state.items.find(i => i.id === id);
+
+/**
+ * Единственный источник списка вещей для всего приложения: сетки гардероба,
+ * выбор вещей для образа и чемодана, палитра, счётчики. Архивные сюда не
+ * попадают, поэтому пометку «в архиве» достаточно будет учесть здесь одной.
+ */
+export const visibleItems = () => state.items.filter(i => !i.archived);
+export const archivedItems = () => state.items.filter(i => i.archived);
+
+/** Сохранение пачкой: перерисовка одна на всю пачку, а не на каждую вещь. */
+export async function saveItems(items) {
+  for (const item of items) {
+    const idx = state.items.findIndex(i => i.id === item.id);
+    if (idx >= 0) state.items[idx] = item; else state.items.unshift(item);
+    await dbPut('items', item);
+  }
+  emit();
+}
 
 /* ---------- outfits ---------- */
 export async function saveOutfit(o) {
@@ -188,10 +230,10 @@ export const catById = id => state.cats.find(c => c.id === id);
 export function subById(catId, subId) {
   return catById(catId)?.subs.find(s => s.id === subId) || null;
 }
-export const countInCat = id => state.items.filter(i => i.catId === id).length;
+export const countInCat = id => visibleItems().filter(i => i.catId === id).length;
 
 /** Вещи, которые считаются гардеробом: без служебных категорий. */
-export const closetCount = () => state.items.filter(i => !isSystemCat(i.catId)).length;
+export const closetCount = () => visibleItems().filter(i => !isSystemCat(i.catId)).length;
 export const countInSystem = system =>
   countInCat(state.cats.find(c => c.system === system)?.id);
 

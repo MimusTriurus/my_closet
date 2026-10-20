@@ -1,6 +1,6 @@
 // Вкладка «Образы»: коллекции (Style Book), редактор образа на Konva, рандомайзер.
 import { fill, h, qs, urlFor, toast, openModal, confirmDialog, promptDialog, actionSheet, busy } from './ui.js';
-import { state, saveOutfit, deleteOutfit, saveCollection, deleteCollection, itemById, emit } from './state.js';
+import { state, saveOutfit, deleteOutfit, saveCollection, deleteCollection, itemById, visibleItems, emit } from './state.js';
 import { uid } from './db.js';
 import { BGS, bgById, bgCss } from './bgs.js';
 import { imageFromBlob } from './editor.js';
@@ -119,7 +119,7 @@ export async function openOutfitEditor(existing) {
 
   async function randomize() {
     const byCat = new Map();
-    for (const it of state.items) {
+    for (const it of visibleItems()) {
       if (!it.catId) continue;
       if (!byCat.has(it.catId)) byCat.set(it.catId, []);
       byCat.get(it.catId).push(it);

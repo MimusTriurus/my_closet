@@ -1,6 +1,6 @@
 // Точка входа: загрузка состояния, переключение вкладок, перерисовка.
-import { fill, qs, qsa, h } from './ui.js';
-import { loadAll, subscribe } from './state.js';
+import { fill, qs, qsa, h, toast } from './ui.js';
+import { loadAll, subscribe, notices } from './state.js';
 import { renderCloset, closetNav, startAddItem } from './closet.js';
 import { renderOutfits, openOutfitEditor } from './outfits.js';
 import { renderCalendar } from './calendar.js';
@@ -57,6 +57,8 @@ async function boot() {
   subscribe(() => render());
   qsa('#tabbar button').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
   render();
+  // загрузка могла что-то поправить сама — не молчим об этом
+  notices.forEach((msg, i) => setTimeout(() => toast(msg, 4200), 600 + i * 800));
 }
 
 boot().catch(e => {

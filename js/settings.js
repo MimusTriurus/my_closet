@@ -2,7 +2,7 @@
 // В приложении это Google Drive; в прототипе — обычный файл, логика та же.
 import { fill, h, openModal, toast, busy } from './ui.js';
 import { dbAll, dbPut, dbClear, STORES } from './db.js';
-import { state, loadAll, emit, closetCount, countInSystem } from './state.js';
+import { state, loadAll, emit, closetCount, countInSystem, archivedItems } from './state.js';
 
 const BLOB_FIELDS = { items: ['img'], outfits: ['preview'] };
 
@@ -74,7 +74,7 @@ export function openSettings() {
         h('div', { class: 'stat' }, h('b', {}, state.outfits.length), h('span', {}, 'образов')),
         h('div', { class: 'stat' }, h('b', {}, state.trips.length), h('span', {}, 'поездок'))),
       h('p', { class: 'muted small center', style: { margin: '8px 0 0' } },
-        `на рассмотрении ${countInSystem('review')} · не разобрано ${countInSystem('sorting')}`),
+        `на рассмотрении ${countInSystem('review')} · не разобрано ${countInSystem('sorting')} · в архиве ${archivedItems().length}`),
       h('div', { class: 'section-title' }, 'Резервная копия'),
       h('div', { class: 'list' },
         h('button', { class: 'btn block', onclick: exportAll }, '⬇️ Сохранить копию в файл'),

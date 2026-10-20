@@ -1,6 +1,6 @@
 // Универсальный выбор вещей / образов (для образов, календаря, чемодана).
 import { fill, h, openModal, urlFor } from './ui.js';
-import { state, catById, visibleItems } from './state.js';
+import { state, catById, visibleItems, closetCats } from './state.js';
 import { bgCss } from './bgs.js';
 
 export function pickItems({ title = 'Выбрать вещи', selected = [], multi = true } = {}) {
@@ -15,7 +15,7 @@ export function pickItems({ title = 'Выбрать вещи', selected = [], mu
     function renderChips() {
       fill(chips, 
         h('button', { class: 'chip' + (!catId ? ' active' : ''), onclick: () => { catId = null; renderChips(); renderGrid(); } }, 'Все'),
-        ...state.cats.filter(c => visibleItems().some(i => i.catId === c.id)).map(c =>
+        ...closetCats().filter(c => visibleItems().some(i => i.catId === c.id)).map(c =>
           h('button', {
             class: 'chip' + (catId === c.id ? ' active' : ''),
             onclick: () => { catId = c.id; renderChips(); renderGrid(); }

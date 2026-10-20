@@ -54,7 +54,9 @@ export const notices = [];
 async function adoptOrphans() {
   const cat = sortingCat();
   if (!cat) return;
-  const lost = state.items.filter(i => !catById(i.catId));
+  // архивные не трогаем: их гардеробная категория нужна только при возврате,
+  // и разбирается этот случай там же
+  const lost = state.items.filter(i => !i.archived && !catById(i.catId));
   for (const it of lost) {
     it.catId = cat.id;
     it.subId = null;
@@ -76,6 +78,10 @@ export function createItem(patch = {}) {
     colors: [],
     bg: 'none',
     fav: false,
+    archived: false,
+    arcCatId: null,     // место в архиве — своё, гардеробное при этом сохраняется,
+    arcSubId: null,     // чтобы возврат вёл вещь ровно туда, откуда она ушла
+
     source: 'photo',
     createdAt: Date.now(),
     ...patch
@@ -164,6 +170,18 @@ export const itemById = id => state.items.find(i => i.id === id);
 export const visibleItems = () => state.items.filter(i => !i.archived);
 export const archivedItems = () => state.items.filter(i => i.archived);
 
+/**
+ * У архива свои категории, отдельные от гардеробных: раскладывать проданное
+ * можно грубее или, наоборот, подробнее, чем то, что носится. Принадлежность
+ * хранится в scope, и списки категорий всегда берутся через эти две функции —
+ * иначе архивные категории рано или поздно просочатся в гардероб.
+ */
+export const SCOPE_CLOSET = 'closet';
+export const SCOPE_ARCHIVE = 'archive';
+export const catsIn = scope => state.cats.filter(c => (c.scope || SCOPE_CLOSET) === scope);
+export const closetCats = () => catsIn(SCOPE_CLOSET);
+export const archiveCats = () => catsIn(SCOPE_ARCHIVE);
+
 /** Сохранение пачкой: перерисовка одна на всю пачку, а не на каждую вещь. */
 export async function saveItems(items) {
   for (const item of items) {
@@ -220,8 +238,11 @@ export async function saveCat(c) {
 export async function deleteCat(id) {
   if (catById(id)?.system) return false;      // служебную категорию удалять нельзя
   state.cats = state.cats.filter(c => c.id !== id);
+  // номер категории уникален, поэтому чистим обе ссылки разом — гардеробную
+  // и архивную: какая из них была, та и обнулится
   for (const it of state.items) {
     if (it.catId === id) { it.catId = null; it.subId = null; await dbPut('items', it); }
+    else if (it.arcCatId === id) { it.arcCatId = null; it.arcSubId = null; await dbPut('items', it); }
   }
   await dbDel('cats', id);
   emit();
@@ -231,6 +252,9 @@ export function subById(catId, subId) {
   return catById(catId)?.subs.find(s => s.id === subId) || null;
 }
 export const countInCat = id => visibleItems().filter(i => i.catId === id).length;
+export const countInArcCat = id => archivedItems().filter(i => i.arcCatId === id).length;
+/** Сколько вещей в категории — с учётом того, гардеробная она или архивная. */
+export const countIn = cat => cat.scope === SCOPE_ARCHIVE ? countInArcCat(cat.id) : countInCat(cat.id);
 
 /** Вещи, которые считаются гардеробом: без служебных категорий. */
 export const closetCount = () => visibleItems().filter(i => !isSystemCat(i.catId)).length;

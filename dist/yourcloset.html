@@ -741,7 +741,9 @@ const notices = [];
 async function adoptOrphans() {
   const cat = sortingCat();
   if (!cat) return;
-  const lost = state.items.filter(i => !catById(i.catId));
+  // архивные не трогаем: их гардеробная категория нужна только при возврате,
+  // и разбирается этот случай там же
+  const lost = state.items.filter(i => !i.archived && !catById(i.catId));
   for (const it of lost) {
     it.catId = cat.id;
     it.subId = null;
@@ -763,6 +765,10 @@ function createItem(patch = {}) {
     colors: [],
     bg: 'none',
     fav: false,
+    archived: false,
+    arcCatId: null,     // место в архиве — своё, гардеробное при этом сохраняется,
+    arcSubId: null,     // чтобы возврат вёл вещь ровно туда, откуда она ушла
+
     source: 'photo',
     createdAt: Date.now(),
     ...patch
@@ -851,6 +857,18 @@ const itemById = id => state.items.find(i => i.id === id);
 const visibleItems = () => state.items.filter(i => !i.archived);
 const archivedItems = () => state.items.filter(i => i.archived);
 
+/**
+ * У архива свои категории, отдельные от гардеробных: раскладывать проданное
+ * можно грубее или, наоборот, подробнее, чем то, что носится. Принадлежность
+ * хранится в scope, и списки категорий всегда берутся через эти две функции —
+ * иначе архивные категории рано или поздно просочатся в гардероб.
+ */
+const SCOPE_CLOSET = 'closet';
+const SCOPE_ARCHIVE = 'archive';
+const catsIn = scope => state.cats.filter(c => (c.scope || SCOPE_CLOSET) === scope);
+const closetCats = () => catsIn(SCOPE_CLOSET);
+const archiveCats = () => catsIn(SCOPE_ARCHIVE);
+
 /** Сохранение пачкой: перерисовка одна на всю пачку, а не на каждую вещь. */
 async function saveItems(items) {
   for (const item of items) {
@@ -907,8 +925,11 @@ async function saveCat(c) {
 async function deleteCat(id) {
   if (catById(id)?.system) return false;      // служебную категорию удалять нельзя
   state.cats = state.cats.filter(c => c.id !== id);
+  // номер категории уникален, поэтому чистим обе ссылки разом — гардеробную
+  // и архивную: какая из них была, та и обнулится
   for (const it of state.items) {
     if (it.catId === id) { it.catId = null; it.subId = null; await dbPut('items', it); }
+    else if (it.arcCatId === id) { it.arcCatId = null; it.arcSubId = null; await dbPut('items', it); }
   }
   await dbDel('cats', id);
   emit();
@@ -918,6 +939,9 @@ function subById(catId, subId) {
   return catById(catId)?.subs.find(s => s.id === subId) || null;
 }
 const countInCat = id => visibleItems().filter(i => i.catId === id).length;
+const countInArcCat = id => archivedItems().filter(i => i.arcCatId === id).length;
+/** Сколько вещей в категории — с учётом того, гардеробная она или архивная. */
+const countIn = cat => cat.scope === SCOPE_ARCHIVE ? countInArcCat(cat.id) : countInCat(cat.id);
 
 /** Вещи, которые считаются гардеробом: без служебных категорий. */
 const closetCount = () => visibleItems().filter(i => !isSystemCat(i.catId)).length;
@@ -1464,7 +1488,7 @@ function pickItems({ title = 'Выбрать вещи', selected = [], multi = t
     function renderChips() {
       fill(chips, 
         h('button', { class: 'chip' + (!catId ? ' active' : ''), onclick: () => { catId = null; renderChips(); renderGrid(); } }, 'Все'),
-        ...state.cats.filter(c => visibleItems().some(i => i.catId === c.id)).map(c =>
+        ...closetCats().filter(c => visibleItems().some(i => i.catId === c.id)).map(c =>
           h('button', {
             class: 'chip' + (catId === c.id ? ' active' : ''),
             onclick: () => { catId = c.id; renderChips(); renderGrid(); }
@@ -1532,7 +1556,7 @@ import {
 } from './ui.js';
 import {
   state, saveItem, saveItems, deleteItem, saveCat, deleteCat, catById, subById, countInCat,
-  visibleItems, itemById,
+  visibleItems, archivedItems, itemById, closetCats, archiveCats, countInArcCat, countIn, SCOPE_ARCHIVE,
   createItem, sortingCat, emit
 } from './state.js';
 
@@ -1620,7 +1644,7 @@ function openItemForm(item, isNew = false) {
     const subSel = h('select', {});
     const catSel = h('select', {
       onchange: () => { item.catId = catSel.value; fillSubs(); }
-    }, state.cats.map(c => h('option', { value: c.id, selected: c.id === item.catId }, `${c.icon || ''} ${c.name}`)));
+    }, closetCats().map(c => h('option', { value: c.id, selected: c.id === item.catId }, `${c.icon || ''} ${c.name}`)));
 
     function fillSubs() {
       const cat = catById(catSel.value);
@@ -1716,8 +1740,16 @@ function openItemCard(item) {
     ),
     foot: [
       h('button', {
-        class: 'btn', onclick: async () => { item.fav = !item.fav; await saveItem(item); toast(item.fav ? 'В избранном' : 'Убрано'); modal.close(); }
-      }, item.fav ? '★ Избранное' : '☆ В избранное'),
+        class: 'btn', title: 'В избранное',
+        onclick: async () => { item.fav = !item.fav; await saveItem(item); toast(item.fav ? 'В избранном' : 'Убрано'); modal.close(); }
+      }, item.fav ? '★' : '☆'),
+      item.archived
+        ? h('button', {
+          class: 'btn', onclick: async () => { modal.close(); await unarchiveItem(item); }
+        }, '↩ Из архива')
+        : h('button', {
+          class: 'btn', onclick: async () => { if (await archiveItem(item)) modal.close(); }
+        }, '📦 В архив'),
       h('button', { class: 'btn', onclick: async () => { modal.close(); await openItemForm(item); } }, '✎ Изменить'),
       h('button', {
         class: 'btn danger', onclick: async () => {
@@ -1765,19 +1797,21 @@ function closetColors() {
 }
 
 /* ---------- менеджер категорий ---------- */
-function openCategoryManager() {
+/** Один и тот же менеджер обслуживает гардероб и архив — разница только в scope. */
+function openCategoryManager(scope = 'closet') {
+  const arc = scope === SCOPE_ARCHIVE;
   const body = h('div', { class: 'list' });
-  const modal = openModal({ title: 'Категории', body, full: true });
+  const modal = openModal({ title: arc ? 'Категории архива' : 'Категории', body, full: true });
 
   function render() {
-    fill(body, 
-      ...state.cats.map(c => h('div', { class: 'lrow' },
+    fill(body,
+      ...(arc ? archiveCats() : closetCats()).map(c => h('div', { class: 'lrow' },
         h('div', { style: { fontSize: '22px' } }, c.icon || '📦'),
         h('div', { class: 't' },
           h('b', {}, c.name),
           h('span', {}, c.system
-            ? `${countInCat(c.id)} вещей · служебная категория`
-            : `${countInCat(c.id)} вещей · ${c.subs.length} подкатегорий`)),
+            ? `${nItems(countIn(c))} · служебная категория`
+            : `${nItems(countIn(c))} · ${c.subs.length} подкатегорий`)),
         h('button', {
           class: 'btn btn-sm', onclick: async () => {
             // служебную категорию можно только переименовать: ни подкатегорий, ни удаления
@@ -1800,7 +1834,7 @@ function openCategoryManager() {
             } else if (act === 'del') {
               // непустую категорию не удаляем: иначе её вещи разом остались бы
               // без места. Сначала перенос — он есть прямо в разделе
-              const n = countInCat(c.id);
+              const n = countIn(c);
               if (n) {
                 await alertDialog(
                   `В категории «${c.name}» ${nItems(n)}. Откройте её, нажмите «Выбрать» и переместите вещи — `
@@ -1817,7 +1851,10 @@ function openCategoryManager() {
         class: 'btn block primary', style: { marginTop: '12px' }, onclick: async () => {
           const n = await promptDialog('Новая категория');
           if (!n) return;
-          await saveCat({ id: uid('c'), name: n, icon: '📦', order: state.cats.length, custom: true, subs: [] });
+          await saveCat({
+            id: uid('c'), name: n, icon: '📦', order: state.cats.length,
+            custom: true, scope, subs: []
+          });
           render();
         }
       }, '+ Добавить категорию')
@@ -1827,13 +1864,17 @@ function openCategoryManager() {
 }
 
 function openSubManager(cat, onDone) {
+  const arc = cat.scope === SCOPE_ARCHIVE;
+  const pool = () => arc ? archivedItems() : visibleItems();
+  const subOf = i => arc ? i.arcSubId : i.subId;
+
   const body = h('div', { class: 'list' });
   const modal = openModal({ title: cat.name, body, onClose: onDone });
   function render() {
-    fill(body, 
+    fill(body,
       ...cat.subs.map(s => h('div', { class: 'lrow' },
         h('div', { class: 't' }, h('b', {}, s.name),
-          h('span', {}, nItems(visibleItems().filter(i => i.subId === s.id).length))),
+          h('span', {}, nItems(pool().filter(i => subOf(i) === s.id).length))),
         h('button', {
           class: 'btn btn-sm', onclick: async () => {
             const n = await promptDialog('Переименовать', s.name);
@@ -1842,8 +1883,10 @@ function openSubManager(cat, onDone) {
         }, '✎'),
         h('button', {
           class: 'btn btn-sm danger', onclick: async () => {
+            // вещи остаются в категории: их подхватит «Другое»
             cat.subs = cat.subs.filter(x => x.id !== s.id);
-            state.items.filter(i => i.subId === s.id).forEach(i => { i.subId = null; saveItem(i); });
+            state.items.filter(i => subOf(i) === s.id)
+              .forEach(i => { arc ? (i.arcSubId = null) : (i.subId = null); saveItem(i); });
             await saveCat(cat); render();
           }
         }, '🗑')
@@ -1854,44 +1897,103 @@ function openSubManager(cat, onDone) {
   render();
 }
 
-/* ---------- навигация по гардеробу ---------- */
+/* ---------- навигация ---------- */
 /**
  * Гардероб устроен как папки: список категорий → подкатегории → вещи.
  * nav.catId пуст — показываем категории; есть категория без подкатегории —
  * её подкатегории (или сразу вещи, если подкатегорий нет); есть обе — вещи.
  * nav.all — плоский список всех вещей с фильтрами по цвету и избранному.
+ * nav.archive — то же дерево, но по архивным вещам и архивным категориям.
  */
 const OTHER = '__other';
-const nav = { all: false, catId: null, subId: null };
+const nav = { all: false, archive: false, catId: null, subId: null };
 
-const goRoot = () => { nav.all = false; nav.catId = null; nav.subId = null; emit(); };
+const goRoot = () => { nav.all = false; nav.archive = false; nav.catId = null; nav.subId = null; emit(); };
+const goArchive = () => { nav.all = false; nav.archive = true; nav.catId = null; nav.subId = null; emit(); };
 const openCat = id => { nav.catId = id; nav.subId = null; emit(); };
 const openSub = id => { nav.subId = id; emit(); };
 
+const curCats = (arc = nav.archive) => arc ? archiveCats() : closetCats();
+const curCat = (id, arc = nav.archive) => curCats(arc).find(c => c.id === id) || null;
+
 /**
- * Вещи раздела. subId === OTHER — те, что лежат в категории без подкатегории.
+ * Вещи раздела. subId === OTHER — те, что лежат в категории без подкатегории;
+ * catId === OTHER — вещи, которым не задана категория (бывает только в архиве).
  * Ссылка на удалённую подкатегорию считается отсутствующей: иначе вещь пропала бы
- * и из списка подкатегорий, и из «Другого», то есть из категории целиком.
+ * и из списка подкатегорий, и из «Другого», то есть из раздела целиком.
  */
-function itemsIn(catId, subId) {
-  const subs = new Set((catById(catId)?.subs || []).map(s => s.id));
-  const sub = i => (subs.has(i.subId) ? i.subId : null);
-  const list = visibleItems().filter(i => i.catId === catId
-    && (subId == null || (subId === OTHER ? !sub(i) : sub(i) === subId)));
-  return list.sort((a, b) => b.createdAt - a.createdAt);
+function itemsIn(catId, subId, arc = nav.archive) {
+  const want = catId === OTHER ? null : catId;
+  const subs = new Set((curCat(want, arc)?.subs || []).map(s => s.id));
+  const catOf = i => (arc ? i.arcCatId : i.catId) || null;
+  const subOf = i => {
+    const v = arc ? i.arcSubId : i.subId;
+    return subs.has(v) ? v : null;
+  };
+  const pool = arc ? archivedItems() : visibleItems();
+  return pool
+    .filter(i => catOf(i) === want && (subId == null || (subId === OTHER ? !subOf(i) : subOf(i) === subId)))
+    .sort((a, b) => b.createdAt - a.createdAt);
 }
 
 /** Последняя добавленная вещь раздела — её миниатюра стоит в строке списка. */
-const latestIn = (catId, subId) => itemsIn(catId, subId)[0] || null;
+const latestIn = (catId, subId, arc) => itemsIn(catId, subId, arc)[0] || null;
 
 /** Что показать в верхней панели: заголовок раздела и кнопку «назад». */
 function closetNav() {
   if (nav.all) return { title: 'Все вещи', back: goRoot };
-  const cat = catById(nav.catId);
+  if (nav.archive && !nav.catId) return { title: 'Архив вещей', back: goRoot };
+  if (nav.archive && nav.catId === OTHER) return { title: 'Другое', back: goArchive };
+
+  const cat = curCat(nav.catId);
   if (!cat) return null;
-  if (!nav.subId) return { title: cat.name, back: goRoot };
+  const up = nav.archive ? goArchive : goRoot;
+  if (!nav.subId) return { title: cat.name, back: up };
   const name = nav.subId === OTHER ? 'Другое' : subById(cat.id, nav.subId)?.name;
   return { title: name || cat.name, back: () => { nav.subId = null; emit(); } };
+}
+
+/* ---------- архив ---------- */
+/**
+ * Архив — пометка на вещи, а не категория: платье остаётся платьем и при
+ * возврате встаёт на своё прежнее место в гардеробе. Из уже собранных образов
+ * архивная вещь не исчезает, иначе календарь перестал бы соответствовать тому,
+ * что было надето.
+ */
+async function archiveItem(item) {
+  const cats = archiveCats();
+  // пока архивных категорий нет, не спрашиваем ни о чём: вещь уходит в архив
+  // как есть, разложить её можно будет потом, уже внутри архива
+  if (cats.length) {
+    const dest = await pickDestination(true);
+    if (!dest) return false;
+    item.arcCatId = dest.catId;
+    item.arcSubId = dest.subId;
+  } else {
+    item.arcCatId = null;
+    item.arcSubId = null;
+  }
+  item.archived = true;
+  await saveItem(item);
+  toast('Перемещено в архив');
+  return true;
+}
+
+async function unarchiveItem(item) {
+  item.archived = false;
+  item.arcCatId = null;
+  item.arcSubId = null;
+  // категории могло не стать, пока вещь лежала в архиве
+  if (!catById(item.catId)) {
+    const sorting = sortingCat();
+    item.catId = sorting?.id || null;
+    item.subId = null;
+    await saveItem(item);
+    toast(`Категории больше нет — вещь в «${sorting?.name || 'гардеробе'}»`, 3400);
+    return;
+  }
+  await saveItem(item);
+  toast('Возвращено из архива');
 }
 
 /* ---------- множественный выбор ---------- */
@@ -1904,7 +2006,7 @@ function closetNav() {
 let selection = null;      // Set с id, пока режим включён
 let selectionKey = null;   // раздел, в котором его включили
 
-const sectionKey = () => `${nav.catId || ''}/${nav.subId || ''}`;
+const sectionKey = () => `${nav.archive ? 'a' : 'c'}/${nav.catId || ''}/${nav.subId || ''}`;
 const selectionOn = () => {
   if (selection && selectionKey !== sectionKey()) selection = null;
   return !!selection;
@@ -1916,33 +2018,41 @@ function toggleSelection(on) {
 }
 
 /** Куда переместить: сначала категория, затем её подкатегория. */
-function pickDestination() {
+function pickDestination(arc = nav.archive) {
   return new Promise(res => {
     let done = false;
     const body = h('div', {});
     const finish = v => { done = true; res(v); modal.close(); };
     const modal = openModal({
-      title: 'Переместить в…', body, full: true,
+      title: arc ? 'Куда в архиве' : 'Переместить в…', body, full: true,
       onClose: () => { if (!done) res(null); }
     });
 
-    const showCats = () => fill(body, h('div', { class: 'list' },
-      ...state.cats.map(c => navRow({
-        thumb: latestIn(c.id), icon: c.icon, title: c.name,
-        note: c.subs.length
-          ? plural(c.subs.length, 'подкатегория', 'подкатегории', 'подкатегорий')
-          : nItems(countInCat(c.id)),
-        onclick: () => c.subs.length ? showSubs(c) : finish({ catId: c.id, subId: null })
-      }))
-    ));
+    const showCats = () => fill(body,
+      h('div', { class: 'list' },
+        ...curCats(arc).map(c => navRow({
+          thumb: latestIn(c.id, null, arc), icon: c.icon, title: c.name,
+          note: c.subs.length
+            ? plural(c.subs.length, 'подкатегория', 'подкатегории', 'подкатегорий')
+            : nItems(itemsIn(c.id, null, arc).length),
+          onclick: () => c.subs.length ? showSubs(c) : finish({ catId: c.id, subId: null })
+        })),
+        // в архиве вещь имеет право лежать вообще без категории
+        arc ? navRow({
+          thumb: latestIn(OTHER, null, true), icon: '📂', title: 'Без категории', muted: true,
+          note: 'в корень архива, в «Другое»',
+          onclick: () => finish({ catId: null, subId: null })
+        }) : null
+      )
+    );
 
     const showSubs = cat => fill(body,
       h('button', { class: 'btn btn-sm', onclick: showCats }, '‹ Все категории'),
       h('div', { class: 'section-title' }, cat.name),
       h('div', { class: 'list' },
         ...cat.subs.map(s => navRow({
-          thumb: latestIn(cat.id, s.id), icon: '📂', title: s.name,
-          note: nItems(itemsIn(cat.id, s.id).length),
+          thumb: latestIn(cat.id, s.id, arc), icon: '📂', title: s.name,
+          note: nItems(itemsIn(cat.id, s.id, arc).length),
           onclick: () => finish({ catId: cat.id, subId: s.id })
         })),
         navRow({
@@ -1958,14 +2068,19 @@ function pickDestination() {
 }
 
 async function moveSelected() {
-  const dest = await pickDestination();
+  const arc = nav.archive;
+  const dest = await pickDestination(arc);
   if (!dest) return;
   const items = [...selection].map(itemById).filter(Boolean);
-  items.forEach(it => { it.catId = dest.catId; it.subId = dest.subId; });
+  items.forEach(it => {
+    if (arc) { it.arcCatId = dest.catId; it.arcSubId = dest.subId; }
+    else { it.catId = dest.catId; it.subId = dest.subId; }
+  });
   selection = null;                 // гасим режим до сохранения: оно перерисует экран
   await saveItems(items);
+  const cat = dest.catId ? curCat(dest.catId, arc) : null;
   const sub = dest.subId ? subById(dest.catId, dest.subId) : null;
-  toast(`${nItems(items.length)} → ${catById(dest.catId)?.name}${sub ? ' › ' + sub.name : ''}`, 3000);
+  toast(`${nItems(items.length)} → ${cat ? cat.name : 'без категории'}${sub ? ' › ' + sub.name : ''}`, 3000);
 }
 
 /* ---------- рендер вкладки ---------- */
@@ -1981,14 +2096,17 @@ function navRow({ thumb, icon, title, note, muted, onclick }) {
   );
 }
 
-
-
-/** Первый уровень: все вещи, служебные категории, затем обычные. */
+/** Первый уровень гардероба: все вещи, служебные категории, затем обычные. */
 function renderRoot(root) {
   const order = ['sorting', 'review'];
-  const system = state.cats.filter(c => c.system)
+  const cats = closetCats();
+  const system = cats.filter(c => c.system)
     .sort((a, b) => order.indexOf(a.system) - order.indexOf(b.system));
-  const rest = state.cats.filter(c => !c.system).sort((a, b) => a.order - b.order);
+  const rest = cats.filter(c => !c.system).sort((a, b) => a.order - b.order);
+  const archived = archivedItems().length;
+  // полоска нужна и при пустом архиве, если категории в нём уже заведены —
+  // иначе до них будет не добраться
+  const hasArchive = archived || archiveCats().length;
 
   fill(root,
     h('div', { class: 'list' },
@@ -1998,17 +2116,57 @@ function renderRoot(root) {
         onclick: () => { nav.all = true; emit(); }
       }),
       ...[...system, ...rest].map(c => navRow({
-        thumb: latestIn(c.id), icon: c.icon, title: c.name,
+        thumb: latestIn(c.id, null, false), icon: c.icon, title: c.name,
         note: nItems(countInCat(c.id))
           + (c.subs.length ? ' · ' + plural(c.subs.length, 'подкатегория', 'подкатегории', 'подкатегорий') : ''),
         onclick: () => openCat(c.id)
       }))
     ),
     h('button', {
-      class: 'btn block ghost', style: { marginTop: '14px' }, onclick: openCategoryManager
+      class: 'btn block ghost', style: { marginTop: '14px' }, onclick: () => openCategoryManager()
     }, '⚙️ Управление категориями'),
-    h('button', { class: 'fab', onclick: startAddItem, title: 'Добавить вещь' }, '+')
+
+    // архив всегда на одном месте — закреплён над панелью вкладок
+    hasArchive ? h('div', { class: 'archive-bar', onclick: goArchive },
+      h('span', {}, '📦'),
+      h('b', { class: 'spacer' }, 'Архив вещей'),
+      archived ? h('span', { class: 'muted' }, archived) : null,
+      h('span', { class: 'muted' }, '›')
+    ) : null,
+
+    h('button', { class: 'fab' + (hasArchive ? ' raised' : ''), onclick: startAddItem, title: 'Добавить вещь' }, '+')
   );
+  root.style.paddingBottom = hasArchive ? '140px' : '';
+}
+
+/** Первый уровень архива: его собственные категории плюс «Другое». */
+function renderArchiveRoot(root) {
+  const cats = archiveCats().sort((a, b) => a.order - b.order);
+  const loose = itemsIn(OTHER, null, true).length;
+
+  fill(root,
+    cats.length || loose ? h('div', { class: 'list' },
+      ...cats.map(c => navRow({
+        thumb: latestIn(c.id, null, true), icon: c.icon, title: c.name,
+        note: nItems(countInArcCat(c.id))
+          + (c.subs.length ? ' · ' + plural(c.subs.length, 'подкатегория', 'подкатегории', 'подкатегорий') : ''),
+        onclick: () => openCat(c.id)
+      })),
+      loose ? navRow({
+        thumb: latestIn(OTHER, null, true), icon: '📂', title: 'Другое', muted: true,
+        note: nItems(loose) + ' без категории',
+        onclick: () => openCat(OTHER)
+      }) : null
+    ) : h('div', { class: 'empty' },
+      h('div', { class: 'big' }, '📦'),
+      h('p', {}, 'Архив пуст. Вещи попадают сюда из карточки — «В архив».')),
+
+    cats.length || loose ? h('button', {
+      class: 'btn block ghost', style: { marginTop: '14px' },
+      onclick: () => openCategoryManager(SCOPE_ARCHIVE)
+    }, '⚙️ Категории архива') : null
+  );
+  root.style.paddingBottom = '';
 }
 
 /** Второй уровень: подкатегории. «Другое» появляется само, когда есть что показать. */
@@ -2029,8 +2187,9 @@ function renderCat(root, cat) {
         onclick: () => openSub(OTHER)
       }) : null
     ),
-    h('button', { class: 'fab', onclick: startAddItem, title: 'Добавить вещь' }, '+')
+    nav.archive ? null : h('button', { class: 'fab', onclick: startAddItem, title: 'Добавить вещь' }, '+')
   );
+  root.style.paddingBottom = '';
 }
 
 const itemTile = (it, selectable = false) => {
@@ -2080,7 +2239,7 @@ function renderItems(root, list, emptyText) {
       }, 'Переместить в…')
     ) : null,
 
-    on ? null : h('button', { class: 'fab', onclick: startAddItem, title: 'Добавить вещь' }, '+')
+    on || nav.archive ? null : h('button', { class: 'fab', onclick: startAddItem, title: 'Добавить вещь' }, '+')
   );
   root.style.paddingBottom = on ? '140px' : '';
 }
@@ -2128,22 +2287,39 @@ function renderAll(root) {
         : 'Гардероб пуст. Чтобы добавить вещи, нажмите «+» внизу справа.')),
     h('button', { class: 'fab', onclick: startAddItem, title: 'Добавить вещь' }, '+')
   );
+  root.style.paddingBottom = '';
 }
 
 function renderCloset(root) {
   if (nav.all) return renderAll(root);
+  if (nav.archive && !nav.catId) return renderArchiveRoot(root);
+  // «Другое» существует, только пока в нём что-то есть: разложили всё —
+  // возвращаемся на уровень выше, а не смотрим на пустой экран
+  if (nav.archive && nav.catId === OTHER) {
+    const loose = itemsIn(OTHER, null, true);
+    if (!loose.length) { nav.catId = null; return renderArchiveRoot(root); }
+    return renderItems(root, loose, 'Здесь пусто.');
+  }
 
-  const cat = catById(nav.catId);
-  if (!cat) { nav.catId = null; nav.subId = null; return renderRoot(root); }
+  const cat = curCat(nav.catId);
+  if (!cat) {
+    nav.catId = null;
+    nav.subId = null;
+    return nav.archive ? renderArchiveRoot(root) : renderRoot(root);
+  }
 
   // подкатегории показываем только там, где они есть
   if (!nav.subId) {
     return cat.subs.length
       ? renderCat(root, cat)
-      : renderItems(root, itemsIn(cat.id), `В разделе «${cat.name}» пока пусто. Нажмите «+» внизу справа.`);
+      : renderItems(root, itemsIn(cat.id), nav.archive
+        ? `В разделе «${cat.name}» пока пусто.`
+        : `В разделе «${cat.name}» пока пусто. Нажмите «+» внизу справа.`);
   }
+  const list = itemsIn(cat.id, nav.subId);
+  if (nav.subId === OTHER && !list.length) { nav.subId = null; return renderCat(root, cat); }
   const name = nav.subId === OTHER ? 'Другое' : subById(cat.id, nav.subId)?.name || cat.name;
-  renderItems(root, itemsIn(cat.id, nav.subId), `В разделе «${name}» пока пусто.`);
+  renderItems(root, list, `В разделе «${name}» пока пусто.`);
 }
 
 /* ===== outfits.js ===== */
@@ -2799,7 +2975,7 @@ function openSettings() {
         h('div', { class: 'stat' }, h('b', {}, state.outfits.length), h('span', {}, 'образов')),
         h('div', { class: 'stat' }, h('b', {}, state.trips.length), h('span', {}, 'поездок'))),
       h('p', { class: 'muted small center', style: { margin: '8px 0 0' } },
-        `на рассмотрении ${countInSystem('review')} · не разобрано ${countInSystem('sorting')}`),
+        `на рассмотрении ${countInSystem('review')} · не разобрано ${countInSystem('sorting')} · в архиве ${archivedItems().length}`),
       h('div', { class: 'section-title' }, 'Резервная копия'),
       h('div', { class: 'list' },
         h('button', { class: 'btn block', onclick: exportAll }, '⬇️ Сохранить копию в файл'),

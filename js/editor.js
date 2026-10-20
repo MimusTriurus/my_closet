@@ -18,6 +18,23 @@ export function imageFromBlob(blob) {
 const canvasToBlob = (c, type = 'image/png') =>
   new Promise(res => c.toBlob(res, type, 0.92));
 
+/**
+ * Ужимает снимок перед сохранением: фото с телефона весит 4–6 МБ, а в карточке
+ * и в образе разница не видна. Прозрачность сохраняем только у PNG.
+ */
+export async function downscaleBlob(blob, max = 1600) {
+  const img = await imageFromBlob(blob);
+  const w = img.naturalWidth, h = img.naturalHeight;
+  const scale = Math.min(1, max / Math.max(w, h));
+  if (scale === 1 && blob.size < 1_500_000) return blob;   // уже компактно
+  const c = document.createElement('canvas');
+  c.width = Math.round(w * scale);
+  c.height = Math.round(h * scale);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  const png = blob.type === 'image/png';
+  return new Promise(r => c.toBlob(r, png ? 'image/png' : 'image/jpeg', 0.88));
+}
+
 /** Обрезает прозрачные поля вокруг вещи. */
 export function trimTransparent(src) {
   const ctx = src.getContext('2d', { willReadFrequently: true });

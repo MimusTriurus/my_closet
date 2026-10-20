@@ -1,11 +1,14 @@
 // Вкладка «Гардероб»: категории, подкатегории, фильтр по цвету, сортировка, карточка вещи.
 import { fill, h, qs, urlFor, toast, openModal, confirmDialog, promptDialog, actionSheet, busy } from './ui.js';
-import { state, saveItem, deleteItem, saveCat, deleteCat, catById, subById, countInCat, emit } from './state.js';
+import {
+  state, saveItem, deleteItem, saveCat, deleteCat, catById, subById, countInCat,
+  createItem, sortingCat, emit
+} from './state.js';
 import { uid } from './db.js';
 import { BASE_COLORS, colorName, itemMatchesColor, extractPalette, oklab } from './color.js';
 import { BGS, bgCss } from './bgs.js';
-import { openImageEditor, imageFromBlob } from './editor.js';
-import { pickImageFile, captureFromCamera, scanColorFromCamera } from './capture.js';
+import { openImageEditor, imageFromBlob, downscaleBlob } from './editor.js';
+import { pickImageFile, pickImageFiles, captureFromCamera, scanColorFromCamera } from './capture.js';
 
 export const filters = { catId: null, subId: null, color: null, sort: 'new', favOnly: false };
 
@@ -21,28 +24,62 @@ export async function addItemFlow(sourceBlob, preset = {}) {
   } catch (e) { console.warn(e); }
   busy(false);
 
-  const item = {
-    id: uid('it'),
+  const item = createItem({
     name: preset.name || '',
-    catId: preset.catId ?? filters.catId ?? state.cats[0]?.id ?? null,
+    catId: preset.catId ?? filters.catId ?? state.cats.find(c => !c.system)?.id ?? null,
     subId: preset.subId ?? null,
     img: blob,
     colors,
-    bg: 'none',
-    fav: false,
-    source: preset.source || 'photo',
-    createdAt: Date.now()
-  };
+    source: preset.source || 'photo'
+  });
   const saved = await openItemForm(item, true);
   return saved;
+}
+
+/**
+ * Массовое добавление: изображения сохраняются как есть, без обработки,
+ * в служебную категорию «Сортировка» — разбирать их пользователь будет потом.
+ */
+export async function startBulkAdd(max = 10) {
+  const files = await pickImageFiles(max);
+  if (!files || !files.length) return;
+  return importFiles(files);
+}
+
+export async function importFiles(files) {
+  const cat = sortingCat();
+
+  let added = 0;
+  for (const file of files) {
+    busy(true, `Добавляю ${added + 1} из ${files.length}…`);
+    try {
+      const img = await downscaleBlob(file, 1600);
+      await saveItem(createItem({ img, catId: cat?.id ?? null, source: 'bulk' }));
+      added++;
+    } catch (e) {
+      console.warn('не удалось добавить', file.name, e);
+    }
+  }
+  busy(false);
+
+  if (!added) { toast('Не удалось прочитать изображения', 3200); return; }
+  filters.catId = cat?.id ?? null;
+  filters.subId = null;
+  filters.color = null;
+  filters.favOnly = false;
+  emit();
+  const skipped = files.length - added;
+  toast(`Добавлено ${added} в «${cat?.name || 'гардероб'}»` + (skipped ? ` · пропущено ${skipped}` : ''), 3000);
 }
 
 export async function startAddItem() {
   const src = await actionSheet('Добавить вещь', [
     { id: 'cam', icon: '📸', label: 'Сделать фото' },
-    { id: 'file', icon: '🖼', label: 'Выбрать из галереи' }
+    { id: 'file', icon: '🖼', label: 'Выбрать из галереи' },
+    { id: 'bulk', icon: '🗃', label: 'Добавить несколько' }
   ]);
   if (!src) return;
+  if (src === 'bulk') return startBulkAdd();
   const blob = src === 'cam' ? await captureFromCamera() : await pickImageFile();
   if (!blob) return;
   await addItemFlow(blob);
@@ -214,10 +251,15 @@ export function openCategoryManager() {
         h('div', { style: { fontSize: '22px' } }, c.icon || '📦'),
         h('div', { class: 't' },
           h('b', {}, c.name),
-          h('span', {}, `${countInCat(c.id)} вещей · ${c.subs.length} подкатегорий`)),
+          h('span', {}, c.system
+            ? `${countInCat(c.id)} вещей · служебная категория`
+            : `${countInCat(c.id)} вещей · ${c.subs.length} подкатегорий`)),
         h('button', {
           class: 'btn btn-sm', onclick: async () => {
-            const act = await actionSheet(c.name, [
+            // служебную категорию можно только переименовать: ни подкатегорий, ни удаления
+            const act = await actionSheet(c.name, c.system ? [
+              { id: 'ren', icon: '✎', label: 'Переименовать' }
+            ] : [
               { id: 'sub', icon: '➕', label: 'Добавить подкатегорию' },
               { id: 'subs', icon: '📂', label: 'Подкатегории' },
               { id: 'ren', icon: '✎', label: 'Переименовать' },

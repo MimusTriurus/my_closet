@@ -20,6 +20,38 @@ export const DEFAULT_CATS = [
   { name: 'Спорт', icon: '🏃', subs: ['Верх', 'Низ', 'Обувь'] }
 ];
 
+// Служебная категория: сюда попадают вещи, добавленные пачкой, до разбора.
+// Её нельзя удалить, подкатегорий у неё нет, но переименовать можно.
+export const SORTING_ICON = '🗃';
+export const sortingCat = () => state.cats.find(c => c.system === 'sorting') || null;
+
+async function ensureSortingCat() {
+  if (sortingCat()) return;
+  const cat = {
+    id: uid('c'), name: 'Сортировка', icon: SORTING_ICON,
+    order: -1, custom: false, system: 'sorting', subs: []
+  };
+  state.cats.unshift(cat);
+  await dbPut('cats', cat);
+}
+
+/** Единая точка создания вещи — чтобы все новые поля появлялись в одном месте. */
+export function createItem(patch = {}) {
+  return {
+    id: uid('it'),
+    name: '',
+    catId: null,
+    subId: null,
+    img: null,
+    colors: [],
+    bg: 'none',
+    fav: false,
+    source: 'photo',
+    createdAt: Date.now(),
+    ...patch
+  };
+}
+
 export async function loadAll() {
   const [items, outfits, collections, cats, calendar, trips] = await Promise.all(
     ['items', 'outfits', 'collections', 'cats', 'calendar', 'trips'].map(dbAll)
@@ -39,6 +71,7 @@ export async function loadAll() {
   } else {
     state.cats = cats.sort((a, b) => a.order - b.order);
   }
+  await ensureSortingCat();
 }
 
 /* ---------- items ---------- */
@@ -116,6 +149,7 @@ export async function saveCat(c) {
   return c;
 }
 export async function deleteCat(id) {
+  if (catById(id)?.system) return false;      // служебную категорию удалять нельзя
   state.cats = state.cats.filter(c => c.id !== id);
   for (const it of state.items) {
     if (it.catId === id) { it.catId = null; it.subId = null; await dbPut('items', it); }

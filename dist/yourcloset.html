@@ -254,6 +254,7 @@ video#cam{width:100%;border-radius:var(--r);background:#000}
 <div id="busy" hidden><div class="busy-box"><div class="spinner"></div><div id="busy-text">Обработка…</div></div></div>
 
 <input type="file" id="file-input" accept="image/*" hidden>
+<input type="file" id="file-input-multi" accept="image/*" multiple hidden>
 
 <script src="https://cdn.jsdelivr.net/npm/konva@9.3.16/konva.min.js"></script>
 <script type="module">
@@ -581,6 +582,38 @@ const DEFAULT_CATS = [
   { name: 'Спорт', icon: '🏃', subs: ['Верх', 'Низ', 'Обувь'] }
 ];
 
+// Служебная категория: сюда попадают вещи, добавленные пачкой, до разбора.
+// Её нельзя удалить, подкатегорий у неё нет, но переименовать можно.
+const SORTING_ICON = '🗃';
+const sortingCat = () => state.cats.find(c => c.system === 'sorting') || null;
+
+async function ensureSortingCat() {
+  if (sortingCat()) return;
+  const cat = {
+    id: uid('c'), name: 'Сортировка', icon: SORTING_ICON,
+    order: -1, custom: false, system: 'sorting', subs: []
+  };
+  state.cats.unshift(cat);
+  await dbPut('cats', cat);
+}
+
+/** Единая точка создания вещи — чтобы все новые поля появлялись в одном месте. */
+function createItem(patch = {}) {
+  return {
+    id: uid('it'),
+    name: '',
+    catId: null,
+    subId: null,
+    img: null,
+    colors: [],
+    bg: 'none',
+    fav: false,
+    source: 'photo',
+    createdAt: Date.now(),
+    ...patch
+  };
+}
+
 async function loadAll() {
   const [items, outfits, collections, cats, calendar, trips] = await Promise.all(
     ['items', 'outfits', 'collections', 'cats', 'calendar', 'trips'].map(dbAll)
@@ -600,6 +633,7 @@ async function loadAll() {
   } else {
     state.cats = cats.sort((a, b) => a.order - b.order);
   }
+  await ensureSortingCat();
 }
 
 /* ---------- items ---------- */
@@ -677,6 +711,7 @@ async function saveCat(c) {
   return c;
 }
 async function deleteCat(id) {
+  if (catById(id)?.system) return false;      // служебную категорию удалять нельзя
   state.cats = state.cats.filter(c => c.id !== id);
   for (const it of state.items) {
     if (it.catId === id) { it.catId = null; it.subId = null; await dbPut('items', it); }
@@ -734,6 +769,23 @@ function imageFromBlob(blob) {
 
 const canvasToBlob = (c, type = 'image/png') =>
   new Promise(res => c.toBlob(res, type, 0.92));
+
+/**
+ * Ужимает снимок перед сохранением: фото с телефона весит 4–6 МБ, а в карточке
+ * и в образе разница не видна. Прозрачность сохраняем только у PNG.
+ */
+async function downscaleBlob(blob, max = 1600) {
+  const img = await imageFromBlob(blob);
+  const w = img.naturalWidth, h = img.naturalHeight;
+  const scale = Math.min(1, max / Math.max(w, h));
+  if (scale === 1 && blob.size < 1_500_000) return blob;   // уже компактно
+  const c = document.createElement('canvas');
+  c.width = Math.round(w * scale);
+  c.height = Math.round(h * scale);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  const png = blob.type === 'image/png';
+  return new Promise(r => c.toBlob(r, png ? 'image/png' : 'image/jpeg', 0.88));
+}
 
 /** Обрезает прозрачные поля вокруг вещи. */
 function trimTransparent(src) {
@@ -1094,6 +1146,27 @@ function pickImageFile() {
   });
 }
 
+/** Выбор нескольких файлов за раз. Больше max за один заход не берём —
+ *  это защита от случайного «выделить всю галерею». */
+function pickImageFiles(max = 10) {
+  return new Promise(res => {
+    const input = qs('#file-input-multi');
+    const onChange = () => {
+      input.removeEventListener('change', onChange);
+      const files = [...(input.files || [])];
+      input.value = '';
+      if (files.length > max) {
+        toast(`За раз можно добавить не больше ${max} — выбрано ${files.length}`, 3800);
+        res(null);
+        return;
+      }
+      res(files);
+    };
+    input.addEventListener('change', onChange);
+    input.click();
+  });
+}
+
 async function startStream(video) {
   const stream = await navigator.mediaDevices.getUserMedia({
     video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } }, audio: false
@@ -1254,6 +1327,10 @@ function pickOutfits({ title = 'Выбрать образы', selected = [], mul
 
 /* ===== closet.js ===== */
 // Вкладка «Гардероб»: категории, подкатегории, фильтр по цвету, сортировка, карточка вещи.
+import {
+  state, saveItem, deleteItem, saveCat, deleteCat, catById, subById, countInCat,
+  createItem, sortingCat, emit
+} from './state.js';
 
 const filters = { catId: null, subId: null, color: null, sort: 'new', favOnly: false };
 
@@ -1269,28 +1346,62 @@ async function addItemFlow(sourceBlob, preset = {}) {
   } catch (e) { console.warn(e); }
   busy(false);
 
-  const item = {
-    id: uid('it'),
+  const item = createItem({
     name: preset.name || '',
-    catId: preset.catId ?? filters.catId ?? state.cats[0]?.id ?? null,
+    catId: preset.catId ?? filters.catId ?? state.cats.find(c => !c.system)?.id ?? null,
     subId: preset.subId ?? null,
     img: blob,
     colors,
-    bg: 'none',
-    fav: false,
-    source: preset.source || 'photo',
-    createdAt: Date.now()
-  };
+    source: preset.source || 'photo'
+  });
   const saved = await openItemForm(item, true);
   return saved;
+}
+
+/**
+ * Массовое добавление: изображения сохраняются как есть, без обработки,
+ * в служебную категорию «Сортировка» — разбирать их пользователь будет потом.
+ */
+async function startBulkAdd(max = 10) {
+  const files = await pickImageFiles(max);
+  if (!files || !files.length) return;
+  return importFiles(files);
+}
+
+async function importFiles(files) {
+  const cat = sortingCat();
+
+  let added = 0;
+  for (const file of files) {
+    busy(true, `Добавляю ${added + 1} из ${files.length}…`);
+    try {
+      const img = await downscaleBlob(file, 1600);
+      await saveItem(createItem({ img, catId: cat?.id ?? null, source: 'bulk' }));
+      added++;
+    } catch (e) {
+      console.warn('не удалось добавить', file.name, e);
+    }
+  }
+  busy(false);
+
+  if (!added) { toast('Не удалось прочитать изображения', 3200); return; }
+  filters.catId = cat?.id ?? null;
+  filters.subId = null;
+  filters.color = null;
+  filters.favOnly = false;
+  emit();
+  const skipped = files.length - added;
+  toast(`Добавлено ${added} в «${cat?.name || 'гардероб'}»` + (skipped ? ` · пропущено ${skipped}` : ''), 3000);
 }
 
 async function startAddItem() {
   const src = await actionSheet('Добавить вещь', [
     { id: 'cam', icon: '📸', label: 'Сделать фото' },
-    { id: 'file', icon: '🖼', label: 'Выбрать из галереи' }
+    { id: 'file', icon: '🖼', label: 'Выбрать из галереи' },
+    { id: 'bulk', icon: '🗃', label: 'Добавить несколько' }
   ]);
   if (!src) return;
+  if (src === 'bulk') return startBulkAdd();
   const blob = src === 'cam' ? await captureFromCamera() : await pickImageFile();
   if (!blob) return;
   await addItemFlow(blob);
@@ -1462,10 +1573,15 @@ function openCategoryManager() {
         h('div', { style: { fontSize: '22px' } }, c.icon || '📦'),
         h('div', { class: 't' },
           h('b', {}, c.name),
-          h('span', {}, `${countInCat(c.id)} вещей · ${c.subs.length} подкатегорий`)),
+          h('span', {}, c.system
+            ? `${countInCat(c.id)} вещей · служебная категория`
+            : `${countInCat(c.id)} вещей · ${c.subs.length} подкатегорий`)),
         h('button', {
           class: 'btn btn-sm', onclick: async () => {
-            const act = await actionSheet(c.name, [
+            // служебную категорию можно только переименовать: ни подкатегорий, ни удаления
+            const act = await actionSheet(c.name, c.system ? [
+              { id: 'ren', icon: '✎', label: 'Переименовать' }
+            ] : [
               { id: 'sub', icon: '➕', label: 'Добавить подкатегорию' },
               { id: 'subs', icon: '📂', label: 'Подкатегории' },
               { id: 'ren', icon: '✎', label: 'Переименовать' },

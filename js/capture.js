@@ -16,6 +16,27 @@ export function pickImageFile() {
   });
 }
 
+/** Выбор нескольких файлов за раз. Больше max за один заход не берём —
+ *  это защита от случайного «выделить всю галерею». */
+export function pickImageFiles(max = 10) {
+  return new Promise(res => {
+    const input = qs('#file-input-multi');
+    const onChange = () => {
+      input.removeEventListener('change', onChange);
+      const files = [...(input.files || [])];
+      input.value = '';
+      if (files.length > max) {
+        toast(`За раз можно добавить не больше ${max} — выбрано ${files.length}`, 3800);
+        res(null);
+        return;
+      }
+      res(files);
+    };
+    input.addEventListener('change', onChange);
+    input.click();
+  });
+}
+
 async function startStream(video) {
   const stream = await navigator.mediaDevices.getUserMedia({
     video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } }, audio: false

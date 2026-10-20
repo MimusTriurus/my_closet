@@ -98,7 +98,7 @@ export function openItemForm(item, isNew = false) {
     const subSel = h('select', {});
     const catSel = h('select', {
       onchange: () => { item.catId = catSel.value; fillSubs(); }
-    }, closetCats().map(c => h('option', { value: c.id, selected: c.id === item.catId }, `${c.icon || ''} ${c.name}`)));
+    }, closetCats().map(c => h('option', { value: c.id, selected: c.id === item.catId }, c.name)));
 
     function fillSubs() {
       const cat = catById(catSel.value);
@@ -260,12 +260,11 @@ export function openCategoryManager(scope = 'closet') {
   function render() {
     fill(body,
       ...(arc ? archiveCats() : closetCats().filter(c => !c.system)).map(c => h('div', { class: 'lrow' },
-        h('div', { style: { fontSize: '22px' } }, c.icon || '📦'),
+        // та же миниатюра, что и в списке разделов: фотография, а не пиктограмма
+        thumbOf(latestIn(c.id, null, arc)),
         h('div', { class: 't' },
           h('b', {}, c.name),
-          h('span', {}, c.system
-            ? `${nItems(countIn(c))} · служебная категория`
-            : `${nItems(countIn(c))} · ${c.subs.length} подкатегорий`)),
+          h('span', {}, `${nItems(countIn(c))} · ${plural(c.subs.length, 'подкатегория', 'подкатегории', 'подкатегорий')}`)),
         h('button', {
           class: 'btn btn-sm', onclick: async () => {
             // служебную категорию можно только переименовать: ни подкатегорий, ни удаления
@@ -306,7 +305,7 @@ export function openCategoryManager(scope = 'closet') {
           const n = await promptDialog('Новая категория');
           if (!n) return;
           await saveCat({
-            id: uid('c'), name: n, icon: '📦', order: state.cats.length,
+            id: uid('c'), name: n, order: state.cats.length,
             custom: true, scope, subs: []
           });
           render();
@@ -345,7 +344,16 @@ function openSubManager(cat, onDone) {
           }
         }, '🗑')
       )),
-      cat.subs.length ? null : h('p', { class: 'muted small' }, 'Пока пусто')
+      cat.subs.length ? null : h('p', { class: 'muted small' }, 'Пока пусто'),
+      h('button', {
+        class: 'btn block primary', style: { marginTop: '12px' }, onclick: async () => {
+          const n = await promptDialog('Новая подкатегория');
+          if (!n) return;
+          cat.subs.push({ id: uid('s'), name: n });
+          await saveCat(cat);
+          render();
+        }
+      }, '+ Добавить подкатегорию')
     );
   }
   render();
@@ -404,18 +412,16 @@ export function closetNav() {
   const cat = curCat(nav.catId);
   if (!cat) return null;
   const up = nav.archive ? goArchive : goRoot;
-  // служебные полки не значатся в «Управлении категориями» — там им нечего
-  // делать, кроме переименования. Переименовываются они изнутри себя
+  // Названия рабочих полок не меняются — как и у архива: это не категории
+  // пользователя, а устройство приложения. Но «На рассмотрении» живёт долго
+  // и может потребовать разделения, поэтому подкатегории там есть
   if (!nav.subId && cat.system) {
     return {
       title: cat.name, back: up,
-      action: {
-        icon: '✎', title: 'Переименовать',
-        onclick: async () => {
-          const n = await promptDialog('Переименовать', cat.name);
-          if (n) { cat.name = n; await saveCat(cat); }
-        }
-      }
+      action: cat.system === 'review' ? {
+        icon: '📂', title: 'Подкатегории',
+        onclick: () => openSubManager(cat, emit)
+      } : null
     };
   }
   if (!nav.subId) return { title: cat.name, back: up };
@@ -501,7 +507,7 @@ function pickDestination(arc = nav.archive) {
     const showCats = () => fill(body,
       h('div', { class: 'list' },
         ...curCats(arc).map(c => navRow({
-          thumb: latestIn(c.id, null, arc), icon: c.icon, title: c.name,
+          thumb: latestIn(c.id, null, arc), title: c.name,
           note: c.subs.length
             ? plural(c.subs.length, 'подкатегория', 'подкатегории', 'подкатегорий')
             : nItems(itemsIn(c.id, null, arc).length),
@@ -509,7 +515,7 @@ function pickDestination(arc = nav.archive) {
         })),
         // в архиве вещь имеет право лежать вообще без категории
         arc ? navRow({
-          thumb: latestIn(OTHER, null, true), icon: '📂', title: 'Без категории', muted: true,
+          thumb: latestIn(OTHER, null, true), title: 'Без категории', muted: true,
           note: 'в корень архива, в «Другое»',
           onclick: () => finish({ catId: null, subId: null })
         }) : null
@@ -521,12 +527,12 @@ function pickDestination(arc = nav.archive) {
       h('div', { class: 'section-title' }, cat.name),
       h('div', { class: 'list' },
         ...cat.subs.map(s => navRow({
-          thumb: latestIn(cat.id, s.id, arc), icon: '📂', title: s.name,
+          thumb: latestIn(cat.id, s.id, arc), title: s.name,
           note: nItems(itemsIn(cat.id, s.id, arc).length),
           onclick: () => finish({ catId: cat.id, subId: s.id })
         })),
         navRow({
-          icon: '📂', title: 'Без подкатегории', muted: true,
+          title: 'Без подкатегории', muted: true,
           note: 'в саму категорию, в «Другое»',
           onclick: () => finish({ catId: cat.id, subId: null })
         })
@@ -560,11 +566,13 @@ async function moveSelected() {
  * Пока в разделе нет вещей, миниатюра остаётся пустой — подставлять вместо неё
  * значок незачем, гардероб наполняют фотографии, а не пиктограммы.
  */
-function navRow({ thumb, thumbNode, icon, title, note, muted, onclick }) {
+const thumbOf = item => item
+  ? h('img', { class: 'thumb', src: urlFor(item.img), style: { background: bgCss(item.bg) } })
+  : h('div', { class: 'thumb ph' });
+
+function navRow({ thumb, thumbNode, title, note, muted, onclick }) {
   return h('div', { class: 'lrow nav' + (muted ? ' soft' : ''), onclick },
-    thumbNode || (thumb
-      ? h('img', { class: 'thumb', src: urlFor(thumb.img), style: { background: bgCss(thumb.bg) } })
-      : h('div', { class: 'thumb ph' }, icon || '')),
+    thumbNode || thumbOf(thumb),
     h('div', { class: 't' }, h('b', {}, title), note ? h('span', {}, note) : null),
     h('span', { class: 'chev' }, '›')
   );
@@ -652,13 +660,13 @@ function renderArchiveRoot(root) {
   fill(root,
     cats.length || loose ? h('div', { class: 'list' },
       ...cats.map(c => navRow({
-        thumb: latestIn(c.id, null, true), icon: c.icon, title: c.name,
+        thumb: latestIn(c.id, null, true), title: c.name,
         note: nItems(countInArcCat(c.id))
           + (c.subs.length ? ' · ' + plural(c.subs.length, 'подкатегория', 'подкатегории', 'подкатегорий') : ''),
         onclick: () => openCat(c.id)
       })),
       loose ? navRow({
-        thumb: latestIn(OTHER, null, true), icon: '📂', title: 'Другое', muted: true,
+        thumb: latestIn(OTHER, null, true), title: 'Другое', muted: true,
         note: nItems(loose) + ' без категории',
         onclick: () => openCat(OTHER)
       }) : null
@@ -681,13 +689,13 @@ function renderCat(root, cat) {
   fill(root,
     h('div', { class: 'list' },
       ...cat.subs.map(s => navRow({
-        thumb: latestIn(cat.id, s.id), icon: '📂', title: s.name,
+        thumb: latestIn(cat.id, s.id), title: s.name,
         note: nItems(itemsIn(cat.id, s.id).length),
         onclick: () => openSub(s.id)
       })),
       // служебная строка: не хранится, не переименовывается, исчезает сама
       loose ? navRow({
-        thumb: latestIn(cat.id, OTHER), icon: '📂', title: 'Другое', muted: true,
+        thumb: latestIn(cat.id, OTHER), title: 'Другое', muted: true,
         note: nItems(loose) + ' без подкатегории',
         onclick: () => openSub(OTHER)
       }) : null

@@ -246,6 +246,34 @@ async function migrateTrips() {
   }
 }
 
+/**
+ * Коллекции образов были плоским списком-чипами — тем же, от чего отказался
+ * гардероб. Превращаем их в категории образов: у образов теперь папки, как
+ * у вещей, с подкатегориями и полным набором действий.
+ */
+async function migrateCollections() {
+  if (!state.collections.length) return;
+  for (const col of state.collections) {
+    const cat = {
+      id: col.id, name: col.name, order: state.cats.length,
+      custom: true, scope: SCOPE_OUTFIT, subs: []
+    };
+    state.cats.push(cat);
+    await dbPut('cats', cat);
+    await dbDel('collections', col.id);
+  }
+  // номер категории совпадает с номером коллекции, поэтому образы
+  // переставлять не нужно — достаточно переименовать поле
+  for (const o of state.outfits) {
+    if (!('collectionId' in o)) continue;
+    o.catId = o.collectionId || null;
+    o.subId = null;
+    delete o.collectionId;
+    await dbPut('outfits', o);
+  }
+  state.collections = [];
+}
+
 export async function loadAll() {
   const [items, outfits, collections, cats, calendar, trips] = await Promise.all(
     ['items', 'outfits', 'collections', 'cats', 'calendar', 'trips'].map(dbAll)
@@ -268,6 +296,7 @@ export async function loadAll() {
   }
   await loadLists();
   await ensureSystemCats();
+  await migrateCollections();
   await adoptOrphans();
 }
 
@@ -319,9 +348,11 @@ export const archivedItems = () => state.items.filter(i => i.archived);
  */
 export const SCOPE_CLOSET = 'closet';
 export const SCOPE_ARCHIVE = 'archive';
+export const SCOPE_OUTFIT = 'outfit';
 export const catsIn = scope => state.cats.filter(c => (c.scope || SCOPE_CLOSET) === scope);
 export const closetCats = () => catsIn(SCOPE_CLOSET);
 export const archiveCats = () => catsIn(SCOPE_ARCHIVE);
+export const outfitCats = () => catsIn(SCOPE_OUTFIT);
 
 /** Сохранение пачкой: перерисовка одна на всю пачку, а не на каждую вещь. */
 export async function saveItems(items) {
@@ -385,6 +416,9 @@ export async function deleteCat(id) {
     if (it.catId === id) { it.catId = null; it.subId = null; await dbPut('items', it); }
     else if (it.arcCatId === id) { it.arcCatId = null; it.arcSubId = null; await dbPut('items', it); }
   }
+  for (const o of state.outfits) {
+    if (o.catId === id) { o.catId = null; o.subId = null; await dbPut('outfits', o); }
+  }
   await dbDel('cats', id);
   emit();
 }
@@ -394,8 +428,13 @@ export function subById(catId, subId) {
 }
 export const countInCat = id => visibleItems().filter(i => i.catId === id).length;
 export const countInArcCat = id => archivedItems().filter(i => i.arcCatId === id).length;
+export const outfitsIn = catId => state.outfits.filter(o => (o.catId || null) === catId);
+export const countInOutfitCat = id => outfitsIn(id).length;
+
 /** Сколько вещей в категории — с учётом того, гардеробная она или архивная. */
-export const countIn = cat => cat.scope === SCOPE_ARCHIVE ? countInArcCat(cat.id) : countInCat(cat.id);
+export const countIn = cat => cat.scope === SCOPE_ARCHIVE ? countInArcCat(cat.id)
+  : cat.scope === SCOPE_OUTFIT ? countInOutfitCat(cat.id)
+    : countInCat(cat.id);
 
 /**
  * Гардероб как таковой: без архива и без рабочих полок. «Сортировка» ещё не

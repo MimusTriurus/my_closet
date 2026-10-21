@@ -1,15 +1,15 @@
 // Вкладка «Гардероб»: категории, подкатегории, фильтр по цвету, сортировка, карточка вещи.
 import {
-  fill, h, qs, urlFor, toast, openModal, confirmDialog, promptDialog, actionSheet,
-  alertDialog, busy, plural, nItems
+  fill, h, qs, urlFor, toast, openModal, confirmDialog, actionSheet, busy, plural, nItems
 } from './ui.js';
-import { openListPicker, entryName, nearestColor } from './fields.js';
+import { openListPicker, entryName } from './fields.js';
+import { openCategoryManager, openSubManager } from './cats.js';
 import {
-  state, saveItem, saveItems, deleteItem, saveCat, deleteCat, catById, subById, countInCat,
-  visibleItems, archivedItems, itemById, closetCats, archiveCats, countInArcCat, countIn, SCOPE_ARCHIVE,
+  state, saveItem, saveItems, deleteItem, catById, subById, countInCat,
+  visibleItems, archivedItems, itemById, closetCats, archiveCats, countInArcCat,
+  SCOPE_CLOSET, SCOPE_ARCHIVE,
   createItem, sortingCat, emit, listEntry, lastCurrency, wearCount, closetItems
 } from './state.js';
-import { uid } from './db.js';
 import { extractPalette } from './color.js';
 import { BGS, bgCss } from './bgs.js';
 import { openImageEditor, imageFromBlob, downscaleBlob } from './editor.js';
@@ -445,104 +445,28 @@ export function filteredItems(arc = nav.archive) {
 
 /* ---------- менеджер категорий ---------- */
 /** Один и тот же менеджер обслуживает гардероб и архив — разница только в scope. */
-export function openCategoryManager(scope = 'closet') {
-  const arc = scope === SCOPE_ARCHIVE;
-  const body = h('div', { class: 'list' });
-  const modal = openModal({ title: arc ? 'Категории архива' : 'Категории', body, full: true });
+/**
+ * Два пространства «Гардероба» для общего механизма категорий: сам гардероб
+ * и архив вещей. Третье — образы — описано в своей вкладке.
+ */
+const space = arc => ({
+  scope: arc ? SCOPE_ARCHIVE : SCOPE_CLOSET,
+  title: arc ? 'Категории архива' : 'Категории',
+  cats: () => arc ? archiveCats() : closetCats().filter(c => !c.system),
+  n: nItems,
+  thumb: c => thumbOf(latestIn(c.id, null, arc)),
+  countSub: (cat, subId) => (arc ? archivedItems() : visibleItems())
+    .filter(i => (arc ? i.arcSubId : i.subId) === subId).length,
+  detachSub: async subId => {
+    const touched = state.items.filter(i => (arc ? i.arcSubId : i.subId) === subId);
+    touched.forEach(i => { arc ? (i.arcSubId = null) : (i.subId = null); });
+    await saveItems(touched);
+  },
+  moveHint: 'Откройте её, нажмите «Выбрать» и переместите вещи — '
+    + 'после этого категорию можно будет удалить.'
+});
 
-  function render() {
-    fill(body,
-      ...(arc ? archiveCats() : closetCats().filter(c => !c.system)).map(c => h('div', { class: 'lrow' },
-        // та же миниатюра, что и в списке разделов: фотография, а не пиктограмма
-        thumbOf(latestIn(c.id, null, arc)),
-        h('div', { class: 't' },
-          h('b', {}, c.name),
-          h('span', {}, `${nItems(countIn(c))} · ${plural(c.subs.length, 'подкатегория', 'подкатегории', 'подкатегорий')}`)),
-        h('button', {
-          class: 'btn btn-sm', onclick: async () => {
-            // здесь — только действия над самой категорией. Её подкатегории
-            // настраиваются изнутри неё, кнопкой в заголовке раздела
-            const act = await actionSheet(c.name, [
-              { id: 'ren', icon: '✎', label: 'Переименовать' },
-              { id: 'del', icon: '🗑', label: 'Удалить категорию', danger: true }
-            ]);
-            if (act === 'ren') {
-              const n = await promptDialog('Переименовать', c.name);
-              if (n) { c.name = n; await saveCat(c); render(); }
-            } else if (act === 'del') {
-              // непустую категорию не удаляем: иначе её вещи разом остались бы
-              // без места. Сначала перенос — он есть прямо в разделе
-              const n = countIn(c);
-              if (n) {
-                await alertDialog(
-                  `В категории «${c.name}» ${nItems(n)}. Откройте её, нажмите «Выбрать» и переместите вещи — `
-                  + 'после этого категорию можно будет удалить.',
-                  'Категория не пуста');
-              } else if (await confirmDialog(`Удалить «${c.name}»?`)) {
-                await deleteCat(c.id); render();
-              }
-            }
-          }
-        }, '⋯')
-      )),
-      h('button', {
-        class: 'btn block primary', style: { marginTop: '12px' }, onclick: async () => {
-          const n = await promptDialog('Новая категория');
-          if (!n) return;
-          await saveCat({
-            id: uid('c'), name: n, order: state.cats.length,
-            custom: true, scope, subs: []
-          });
-          render();
-        }
-      }, '+ Добавить категорию')
-    );
-  }
-  render();
-}
-
-function openSubManager(cat, onDone) {
-  const arc = cat.scope === SCOPE_ARCHIVE;
-  const pool = () => arc ? archivedItems() : visibleItems();
-  const subOf = i => arc ? i.arcSubId : i.subId;
-
-  const body = h('div', { class: 'list' });
-  const modal = openModal({ title: cat.name, body, onClose: onDone });
-  function render() {
-    fill(body,
-      ...cat.subs.map(s => h('div', { class: 'lrow' },
-        h('div', { class: 't' }, h('b', {}, s.name),
-          h('span', {}, nItems(pool().filter(i => subOf(i) === s.id).length))),
-        h('button', {
-          class: 'btn btn-sm', onclick: async () => {
-            const n = await promptDialog('Переименовать', s.name);
-            if (n) { s.name = n; await saveCat(cat); render(); }
-          }
-        }, '✎'),
-        h('button', {
-          class: 'btn btn-sm danger', onclick: async () => {
-            // вещи остаются в категории: их подхватит «Другое»
-            cat.subs = cat.subs.filter(x => x.id !== s.id);
-            state.items.filter(i => subOf(i) === s.id)
-              .forEach(i => { arc ? (i.arcSubId = null) : (i.subId = null); saveItem(i); });
-            await saveCat(cat); render();
-          }
-        }, '🗑')
-      )),
-      cat.subs.length ? null : h('p', { class: 'muted small' }, 'Пока пусто'),
-      h('button', {
-        class: 'btn block primary', style: { marginTop: '12px' }, onclick: async () => {
-          const n = await promptDialog('Новая подкатегория');
-          if (!n) return;
-          cat.subs.push({ id: uid('s'), name: n });
-          await saveCat(cat);
-          render();
-        }
-      }, '+ Добавить подкатегорию')
-    );
-  }
-  render();
-}
+export const openClosetCats = (scope = SCOPE_CLOSET) => openCategoryManager(space(scope === SCOPE_ARCHIVE));
 
 /* ---------- навигация ---------- */
 /**
@@ -613,7 +537,7 @@ export function closetNav() {
       title: cat.name, back: up,
       action: cat.system === 'sorting' ? null : {
         icon: '📂', title: 'Подкатегории',
-        onclick: () => openSubManager(cat, emit)
+        onclick: () => openSubManager(space(nav.archive), cat, emit)
       }
     };
   }
@@ -830,7 +754,7 @@ function renderRoot(root) {
       }))
     ),
     h('button', {
-      class: 'btn block ghost', style: { marginTop: '14px' }, onclick: () => openCategoryManager()
+      class: 'btn block ghost', style: { marginTop: '14px' }, onclick: () => openClosetCats()
     }, '⚙️ Управление категориями'),
 
     h('div', { class: 'pinned-bottom' }, bars),
@@ -875,7 +799,7 @@ function renderArchiveRoot(root) {
 
     cats.length || loose ? h('button', {
       class: 'btn block ghost', style: { marginTop: '14px' },
-      onclick: () => openCategoryManager(SCOPE_ARCHIVE)
+      onclick: () => openClosetCats(SCOPE_ARCHIVE)
     }, '⚙️ Категории архива') : null
   );
   root.style.paddingBottom = '';

@@ -7,10 +7,10 @@ import { openListPicker, entryName } from './fields.js';
 import {
   state, saveItem, saveItems, deleteItem, saveCat, deleteCat, catById, subById, countInCat,
   visibleItems, archivedItems, itemById, closetCats, archiveCats, countInArcCat, countIn, SCOPE_ARCHIVE,
-  createItem, sortingCat, emit, listEntry, lastCurrency, wearCount
+  createItem, sortingCat, emit, listEntry, listItems, lastCurrency, wearCount
 } from './state.js';
 import { uid } from './db.js';
-import { BASE_COLORS, colorName, itemMatchesColor, extractPalette, oklab } from './color.js';
+import { extractPalette, oklab, hexToRgb, colorDist } from './color.js';
 import { BGS, bgCss } from './bgs.js';
 import { openImageEditor, imageFromBlob, downscaleBlob } from './editor.js';
 import { pickImageFile, pickImageFiles, captureFromCamera, scanColorFromCamera } from './capture.js';
@@ -158,6 +158,39 @@ function compositionGroup(label, list) {
   return box;
 }
 
+/**
+ * Цвета вещи. Проставляются вручную: у человека своё видение цвета, и тот,
+ * кто носит шартрез, ищет его как шартрез. Оттенки с фотографии идут
+ * подсказкой при создании нового цвета палитры — не больше того.
+ */
+const MAX_COLORS = 5;
+function colorsGroup(ids, suggest) {
+  const box = h('div', {});
+  function paint() {
+    fill(box,
+      h('div', { class: 'section-title' }, 'Цвета'),
+      h('div', { class: 'row', style: { gap: '6px', flexWrap: 'wrap' } },
+        ids.map((id, i) => {
+          const c = listEntry('colors', id);
+          return h('button', {
+            class: 'chip', onclick: () => { ids.splice(i, 1); paint(); }
+          }, h('span', { class: 'dot', style: { background: c?.hex } }), (c?.name || 'цвет') + ' ✕');
+        }),
+        ids.length < MAX_COLORS ? h('button', {
+          class: 'chip add', onclick: async () => {
+            const id = await openListPicker('colors', { exclude: ids, suggest });
+            if (!id) return;
+            ids.push(id);
+            paint();
+          }
+        }, '+ Цвет') : null
+      )
+    );
+  }
+  paint();
+  return box;
+}
+
 /* ---------- форма вещи ---------- */
 export function openItemForm(item, isNew = false) {
   return new Promise(res => {
@@ -168,6 +201,9 @@ export function openItemForm(item, isNew = false) {
       lining: (item.material?.lining || []).map(p => ({ ...p }))
     };
     let brandId = item.brandId || null;
+    const colorIds = [...(item.colorIds || [])];
+    // подсказка для новых цветов палитры — оттенки, снятые с этой фотографии
+    const suggest = (item.colors || []).map(c => c.hex);
 
     const subSel = h('select', {});
     const catSel = h('select', {
@@ -218,6 +254,7 @@ export function openItemForm(item, isNew = false) {
         h('label', { class: 'field' }, h('span', {}, 'Категория'), catSel),
         h('label', { class: 'field' }, h('span', {}, 'Подкатегория'), subSel),
         listField('Производитель', 'brands', () => brandId, v => { brandId = v; }),
+        colorsGroup(colorIds, suggest),
         compositionGroup('Состав', mat.main),
         compositionGroup('Подкладка', mat.lining),
         h('label', { class: 'field' }, h('span', {}, 'Цена'),
@@ -242,6 +279,7 @@ export function openItemForm(item, isNew = false) {
             // значение списка могли удалить, пока форма была открыта
             const alive = (key, id) => (listEntry(key, id) ? id : null);
             item.brandId = alive('brands', brandId);
+            item.colorIds = colorIds.filter(id => alive('colors', id));
             item.material = {
               main: mat.main.filter(p => alive('materials', p.id)),
               lining: mat.lining.filter(p => alive('materials', p.id))
@@ -375,11 +413,12 @@ function renderItemCard(root, item) {
 export function filteredItems() {
   let list = visibleItems();
   if (filters.favOnly) list = list.filter(i => i.fav);
-  if (filters.color) list = list.filter(i => itemMatchesColor(i, filters.color));
+  if (filters.color === NO_COLOR) list = list.filter(i => !(i.colorIds || []).length);
+  else if (filters.color) list = list.filter(i => (i.colorIds || []).includes(filters.color));
   const hue = i => {
-    const c = i.colors?.[0]?.hex;
+    const c = listEntry('colors', (i.colorIds || [])[0])?.hex;
     if (!c) return 999;
-    const [L, a, b] = oklab(...[1, 3, 5].map(k => parseInt(c.substr(k, 2), 16)));
+    const [L, a, b] = oklab(...hexToRgb(c));
     return Math.atan2(b, a);
   };
   const sorters = {
@@ -392,19 +431,24 @@ export function filteredItems() {
 }
 
 /* ---------- палитра гардероба ---------- */
+/** Палитра для фильтра — та же, что в карточках: своя, а не вычисленная. */
 function closetColors() {
-  // группируем цвета вещей по базовой палитре
   const counts = new Map();
   for (const it of visibleItems()) {
-    const seen = new Set();
-    for (const c of it.colors || []) {
-      if (c.ratio < 0.08) continue;
-      const base = BASE_COLORS.find(bc => itemMatchesColor({ colors: [c] }, bc.hex, 0.13)) || null;
-      if (base && !seen.has(base.hex)) { seen.add(base.hex); counts.set(base.hex, (counts.get(base.hex) || 0) + 1); }
-    }
+    for (const id of new Set(it.colorIds || [])) counts.set(id, (counts.get(id) || 0) + 1);
   }
-  return BASE_COLORS.filter(c => counts.has(c.hex)).map(c => ({ ...c, n: counts.get(c.hex) }))
-    .sort((a, b) => b.n - a.n);
+  return listItems('colors').map(c => ({ ...c, n: counts.get(c.id) || 0 }));
+}
+
+/** Ближайший цвет палитры — для цвета, снятого камерой. */
+function nearestColor(hex) {
+  let best = null, bd = 1e9;
+  for (const c of listItems('colors')) {
+    if (!c.hex) continue;
+    const d = colorDist(hex, c.hex);
+    if (d < bd) { bd = d; best = c; }
+  }
+  return best;
 }
 
 /* ---------- менеджер категорий ---------- */
@@ -517,6 +561,8 @@ function openSubManager(cat, onDone) {
  * nav.archive — то же дерево, но по архивным вещам и архивным категориям.
  */
 export const OTHER = '__other';
+// отдельное значение фильтра: вещи, которым цвет ещё не проставлен
+export const NO_COLOR = '__nocolor';
 // высота закреплённой строки внизу — должна совпадать с .service-bar в стилях
 const SERVICE_BAR_H = 42;
 export const nav = { all: false, archive: false, catId: null, subId: null, itemId: null };
@@ -914,16 +960,28 @@ function renderAll(root) {
   const palette = closetColors();
   const list = filteredItems();
 
+  const noColor = visibleItems().filter(i => !(i.colorIds || []).length).length;
+  const pick = v => { filters.color = filters.color === v ? null : v; emit(); };
+
   const colorRow = h('div', { class: 'palette-row' },
     h('button', {
       class: 'swatch', title: 'Сканировать цвет камерой',
       style: { background: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' },
-      onclick: async () => { const hex = await scanColorFromCamera(); if (hex) { filters.color = hex; emit(); } }
+      onclick: async () => {
+        const hex = await scanColorFromCamera();
+        const near = hex && nearestColor(hex);
+        if (near) { filters.color = near.id; emit(); }
+      }
     }, '📷'),
-    ...(palette.length ? palette : BASE_COLORS).map(c => h('button', {
-      class: 'swatch' + (filters.color === c.hex ? ' sel' : ''),
+    // вещи без цвета иначе не найти: отдельного места у них нет
+    noColor ? h('button', {
+      class: 'swatch none' + (filters.color === NO_COLOR ? ' sel' : ''),
+      title: `Без цвета · ${noColor}`, onclick: () => pick(NO_COLOR)
+    }, '∅') : null,
+    ...palette.map(c => h('button', {
+      class: 'swatch' + (filters.color === c.id ? ' sel' : '') + (c.n ? '' : ' unused'),
       style: { background: c.hex }, title: `${c.name}${c.n ? ' · ' + c.n : ''}`,
-      onclick: () => { filters.color = filters.color === c.hex ? null : c.hex; emit(); }
+      onclick: () => pick(c.id)
     }))
   );
 
@@ -931,7 +989,10 @@ function renderAll(root) {
     h('span', { class: 'small muted spacer' }, nItems(list.length)),
     filters.color ? h('button', {
       class: 'chip active', onclick: () => { filters.color = null; emit(); }
-    }, h('span', { class: 'dot', style: { background: filters.color } }), colorName(filters.color), ' ✕') : null,
+    },
+      filters.color === NO_COLOR ? null
+        : h('span', { class: 'dot', style: { background: listEntry('colors', filters.color)?.hex } }),
+      filters.color === NO_COLOR ? 'Без цвета' : listEntry('colors', filters.color)?.name || 'Цвет', ' ✕') : null,
     h('button', {
       class: 'chip' + (filters.favOnly ? ' active' : ''),
       onclick: () => { filters.favOnly = !filters.favOnly; emit(); }

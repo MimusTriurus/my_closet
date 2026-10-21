@@ -9,17 +9,61 @@ import {
 
 const sameName = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
+/**
+ * Новый цвет: название и оттенок. Оттенки с фотографии предлагаются
+ * подсказкой — чтобы шартрез завёлся тем самым цветом, что на юбке,
+ * а не подобранным на глаз.
+ */
+function createColor(suggest) {
+  return new Promise(res => {
+    let done = false;
+    const nameInput = h('input', { type: 'text', placeholder: 'Например, шартрез' });
+    const hexInput = h('input', { type: 'color', class: 'hex', value: suggest[0] || '#8a9a5b' });
+    const row = h('div', { class: 'palette-row' }, suggest.map((hex, i) => h('button', {
+      class: 'swatch' + (i === 0 ? ' sel' : ''), style: { background: hex }, title: 'Цвет с фотографии',
+      onclick: e => {
+        hexInput.value = hex;
+        [...row.children].forEach(x => x.classList.remove('sel'));
+        e.currentTarget.classList.add('sel');
+      }
+    })));
+    const modal = openModal({
+      title: 'Новый цвет',
+      body: h('div', {},
+        suggest.length ? h('div', { class: 'section-title' }, 'С фотографии') : null,
+        suggest.length ? row : null,
+        h('label', { class: 'field' }, h('span', {}, 'Оттенок'), hexInput),
+        h('label', { class: 'field' }, h('span', {}, 'Название'), nameInput)),
+      foot: [
+        h('button', { class: 'btn', onclick: () => modal.close() }, 'Отмена'),
+        h('button', {
+          class: 'btn primary', onclick: () => {
+            const name = nameInput.value.trim();
+            if (!name) return nameInput.focus();
+            done = true;
+            res({ name, hex: hexInput.value });
+            modal.close();
+          }
+        }, 'Добавить')
+      ],
+      onClose: () => { if (!done) res(null); }
+    });
+  });
+}
+
 /** Новое значение списка. Повтор не заводим — возвращаем то, что уже есть. */
-async function createEntry(key) {
+async function createEntry(key, suggest = []) {
   const def = LIST_DEFS[key];
-  const name = await promptDialog(def.add, '', 'Название');
-  if (!name) return null;
-  const twin = listItems(key).find(e => sameName(e.name, name));
+  const patch = key === 'colors'
+    ? await createColor(suggest)
+    : { name: (await promptDialog(def.add, '', 'Название') || '').trim() };
+  if (!patch || !patch.name) return null;
+  const twin = listItems(key).find(e => sameName(e.name, patch.name));
   if (twin) {
     await alertDialog(`«${twin.name}» в списке уже есть.`, 'Такое уже есть');
     return twin;
   }
-  return addListEntry(key, { name: name.trim() });
+  return addListEntry(key, patch);
 }
 
 /**
@@ -52,7 +96,7 @@ async function removeEntry(key, entry) {
  * Возвращает id (single), массив id (multi), '' — снять значение, null — отмена.
  */
 export function openListPicker(key, {
-  selected = null, multi = false, exclude = [], title = null, manage = true
+  selected = null, multi = false, exclude = [], title = null, manage = true, suggest = []
 } = {}) {
   const def = LIST_DEFS[key];
   return new Promise(res => {
@@ -95,11 +139,15 @@ export function openListPicker(key, {
                   ev.stopPropagation();
                   const act = await actionSheet(e.name, [
                     { id: 'ren', icon: '✎', label: 'Переименовать' },
+                    ...(e.hex ? [{ id: 'hue', icon: '🎨', label: 'Изменить оттенок' }] : []),
                     { id: 'del', icon: '🗑', label: 'Удалить из списка', danger: true }
                   ]);
                   if (act === 'ren') {
                     const n = await promptDialog('Переименовать', e.name);
                     if (n && !sameName(n, e.name)) await updateListEntry(key, e.id, { name: n.trim() });
+                  } else if (act === 'hue') {
+                    const hex = await pickHue(e);
+                    if (hex) await updateListEntry(key, e.id, { hex });
                   } else if (act === 'del') {
                     if (await removeEntry(key, e)) picked.delete(e.id);
                   }
@@ -113,7 +161,7 @@ export function openListPicker(key, {
         manage ? h('button', {
           class: 'btn block btn-add', style: { marginTop: '10px' },
           onclick: async () => {
-            const e = await createEntry(key);
+            const e = await createEntry(key, suggest);
             if (!e) return render();
             if (multi) { picked.add(e.id); render(); } else finish(e.id);
           }
@@ -121,6 +169,26 @@ export function openListPicker(key, {
       );
     }
     render();
+  });
+}
+
+/** Смена оттенка существующего цвета: вещи хранят ссылку, правка общая. */
+function pickHue(entry) {
+  return new Promise(res => {
+    let done = false;
+    const input = h('input', { type: 'color', class: 'hex', value: entry.hex || '#808080' });
+    const modal = openModal({
+      title: entry.name,
+      body: h('label', { class: 'field' }, h('span', {}, 'Оттенок'), input),
+      foot: [
+        h('button', { class: 'btn', onclick: () => modal.close() }, 'Отмена'),
+        h('button', {
+          class: 'btn primary',
+          onclick: () => { done = true; res(input.value); modal.close(); }
+        }, 'Сохранить')
+      ],
+      onClose: () => { if (!done) res(null); }
+    });
   });
 }
 

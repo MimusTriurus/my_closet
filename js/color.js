@@ -1,4 +1,5 @@
-// Работа с цветом: извлечение палитры вещи, сравнение в OKLab, названия цветов.
+// Работа с цветом: извлечение оттенков с фотографии и сравнение в OKLab.
+// Названий цветов здесь нет — их даёт пользователь в своей палитре.
 
 export const hexToRgb = hex => {
   const n = parseInt(hex.replace('#', ''), 16);
@@ -66,31 +67,4 @@ export function extractPalette(source, k = 5) {
     if (merged.length >= k * 3) break;
   }
   return merged.slice(0, k).map(m => ({ hex: m.hex, ratio: +(m.n / total).toFixed(3) }));
-}
-
-// Базовая палитра для поиска «по цвету»
-export const BASE_COLORS = [
-  { hex: '#000000', name: 'Чёрный' }, { hex: '#4a4a4a', name: 'Серый' },
-  { hex: '#b9b3ad', name: 'Светло-серый' }, { hex: '#ffffff', name: 'Белый' },
-  { hex: '#efe3cf', name: 'Бежевый' }, { hex: '#8b5e3c', name: 'Коричневый' },
-  { hex: '#c1785c', name: 'Терракота' }, { hex: '#d94f45', name: 'Красный' },
-  { hex: '#e58a3c', name: 'Оранжевый' }, { hex: '#e9c94b', name: 'Жёлтый' },
-  { hex: '#6fa85c', name: 'Зелёный' }, { hex: '#2f6d5a', name: 'Изумрудный' },
-  { hex: '#4b8fc4', name: 'Голубой' }, { hex: '#28406e', name: 'Синий' },
-  { hex: '#7b5ea7', name: 'Фиолетовый' }, { hex: '#d98fb0', name: 'Розовый' }
-];
-
-export function colorName(hex) {
-  let best = BASE_COLORS[0], bd = 1e9;
-  for (const c of BASE_COLORS) {
-    const d = colorDist(hex, c.hex);
-    if (d < bd) { bd = d; best = c; }
-  }
-  return best.name;
-}
-
-// Похож ли предмет на искомый цвет: смотрим все его доминирующие цвета
-export function itemMatchesColor(item, hex, tolerance = 0.13) {
-  if (!item.colors || !item.colors.length) return false;
-  return item.colors.some(c => c.ratio > 0.05 && colorDist(c.hex, hex) <= tolerance);
 }

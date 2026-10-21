@@ -200,6 +200,12 @@ main#views{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scro
 .part-row .pct{width:66px;flex:0 0 auto;text-align:center}
 /* второй путь в выборе: доступен, но не бросается в глаза */
 .btn.quiet{background:transparent;border-color:transparent;color:var(--muted);font-size:13px;font-weight:500}
+/* цвет, которого ещё нет ни на одной вещи, и «без цвета» */
+.swatch.unused{opacity:.4}
+.swatch.none{background:var(--surface);border:1px dashed var(--muted);color:var(--muted);
+  display:flex;align-items:center;justify-content:center;font-size:14px}
+.chip.add{border-style:dashed;color:var(--muted)}
+input[type=color].hex{width:100%;height:42px;padding:2px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--surface)}
 .row .cur{width:58px;flex:0 0 auto;text-align:center}
 
 
@@ -625,7 +631,8 @@ function fill(el, ...kids) {
 }
 
 /* ===== color.js ===== */
-// Работа с цветом: извлечение палитры вещи, сравнение в OKLab, названия цветов.
+// Работа с цветом: извлечение оттенков с фотографии и сравнение в OKLab.
+// Названий цветов здесь нет — их даёт пользователь в своей палитре.
 
 const hexToRgb = hex => {
   const n = parseInt(hex.replace('#', ''), 16);
@@ -693,33 +700,6 @@ function extractPalette(source, k = 5) {
     if (merged.length >= k * 3) break;
   }
   return merged.slice(0, k).map(m => ({ hex: m.hex, ratio: +(m.n / total).toFixed(3) }));
-}
-
-// Базовая палитра для поиска «по цвету»
-const BASE_COLORS = [
-  { hex: '#000000', name: 'Чёрный' }, { hex: '#4a4a4a', name: 'Серый' },
-  { hex: '#b9b3ad', name: 'Светло-серый' }, { hex: '#ffffff', name: 'Белый' },
-  { hex: '#efe3cf', name: 'Бежевый' }, { hex: '#8b5e3c', name: 'Коричневый' },
-  { hex: '#c1785c', name: 'Терракота' }, { hex: '#d94f45', name: 'Красный' },
-  { hex: '#e58a3c', name: 'Оранжевый' }, { hex: '#e9c94b', name: 'Жёлтый' },
-  { hex: '#6fa85c', name: 'Зелёный' }, { hex: '#2f6d5a', name: 'Изумрудный' },
-  { hex: '#4b8fc4', name: 'Голубой' }, { hex: '#28406e', name: 'Синий' },
-  { hex: '#7b5ea7', name: 'Фиолетовый' }, { hex: '#d98fb0', name: 'Розовый' }
-];
-
-function colorName(hex) {
-  let best = BASE_COLORS[0], bd = 1e9;
-  for (const c of BASE_COLORS) {
-    const d = colorDist(hex, c.hex);
-    if (d < bd) { bd = d; best = c; }
-  }
-  return best.name;
-}
-
-// Похож ли предмет на искомый цвет: смотрим все его доминирующие цвета
-function itemMatchesColor(item, hex, tolerance = 0.13) {
-  if (!item.colors || !item.colors.length) return false;
-  return item.colors.some(c => c.ratio > 0.05 && colorDist(c.hex, hex) <= tolerance);
 }
 
 /* ===== bgs.js ===== */
@@ -826,10 +806,25 @@ const DEFAULT_MATERIALS = [
   'Полиэстер', 'Полиамид', 'Эластан', 'Акрил', 'Кожа', 'Замша'
 ];
 
+/**
+ * Палитра, с которой начинает гардероб: дальше её переименовывают, удаляют
+ * и дополняют. Пустой список означал бы, что первая же вещь требует завести
+ * цвет с нуля.
+ */
+const DEFAULT_COLORS = [
+  { name: 'Чёрный', hex: '#1a1a1a' }, { name: 'Белый', hex: '#f5f3ef' },
+  { name: 'Серый', hex: '#808080' }, { name: 'Бежевый', hex: '#e0cfb4' },
+  { name: 'Коричневый', hex: '#8b5e3c' }, { name: 'Красный', hex: '#c8443c' },
+  { name: 'Оранжевый', hex: '#e08a3c' }, { name: 'Жёлтый', hex: '#e3c34a' },
+  { name: 'Зелёный', hex: '#6f9a5c' }, { name: 'Голубой', hex: '#6ba3cc' },
+  { name: 'Синий', hex: '#2b4472' }, { name: 'Фиолетовый', hex: '#7b5ea7' },
+  { name: 'Розовый', hex: '#d98fb0' }
+];
+
 const LIST_DEFS = {
   brands: { title: 'Производитель', add: 'Добавить производителя', one: 'производителя', seed: [] },
   materials: { title: 'Материал', add: 'Добавить материал', one: 'материал', seed: DEFAULT_MATERIALS },
-  colors: { title: 'Цвет', add: 'Добавить цвет', one: 'цвет', seed: [] }
+  colors: { title: 'Цвет', add: 'Добавить цвет', one: 'цвет', seed: DEFAULT_COLORS }
 };
 
 const listKey = key => 'list:' + key;
@@ -837,11 +832,12 @@ const listKey = key => 'list:' + key;
 async function loadLists() {
   for (const key of Object.keys(LIST_DEFS)) {
     const rec = await dbGet('meta', listKey(key));
-    if (rec) { state.lists[key] = rec.items || []; continue; }
-    // первого запуска у списка ещё не было — засеваем и запоминаем, что засеяли:
-    // иначе удалённые значения возвращались бы при каждой загрузке
-    state.lists[key] = (LIST_DEFS[key].seed || []).map(name => ({ id: uid('l'), name }));
-    await dbPut('meta', { id: listKey(key), items: state.lists[key] });
+    // засеваем один раз и помним об этом: иначе удалённые значения
+    // возвращались бы при каждой загрузке
+    if (rec && (rec.seeded || rec.items?.length)) { state.lists[key] = rec.items || []; continue; }
+    state.lists[key] = (LIST_DEFS[key].seed || [])
+      .map(x => ({ id: uid('l'), ...(typeof x === 'string' ? { name: x } : x) }));
+    await dbPut('meta', { id: listKey(key), items: state.lists[key], seeded: true });
   }
 }
 
@@ -850,7 +846,7 @@ const listEntry = (key, id) => listItems(key).find(e => e.id === id) || null;
 const listName = (key, id) => listEntry(key, id)?.name || '';
 
 async function saveList(key) {
-  await dbPut('meta', { id: listKey(key), items: state.lists[key] });
+  await dbPut('meta', { id: listKey(key), items: state.lists[key], seeded: true });
   emit();
 }
 
@@ -1745,7 +1741,7 @@ import {
 import {
   state, saveItem, saveItems, deleteItem, saveCat, deleteCat, catById, subById, countInCat,
   visibleItems, archivedItems, itemById, closetCats, archiveCats, countInArcCat, countIn, SCOPE_ARCHIVE,
-  createItem, sortingCat, emit, listEntry, lastCurrency, wearCount
+  createItem, sortingCat, emit, listEntry, listItems, lastCurrency, wearCount
 } from './state.js';
 
 // фильтры живут только в разделе «Все вещи» — по категориям ходит nav
@@ -1891,6 +1887,39 @@ function compositionGroup(label, list) {
   return box;
 }
 
+/**
+ * Цвета вещи. Проставляются вручную: у человека своё видение цвета, и тот,
+ * кто носит шартрез, ищет его как шартрез. Оттенки с фотографии идут
+ * подсказкой при создании нового цвета палитры — не больше того.
+ */
+const MAX_COLORS = 5;
+function colorsGroup(ids, suggest) {
+  const box = h('div', {});
+  function paint() {
+    fill(box,
+      h('div', { class: 'section-title' }, 'Цвета'),
+      h('div', { class: 'row', style: { gap: '6px', flexWrap: 'wrap' } },
+        ids.map((id, i) => {
+          const c = listEntry('colors', id);
+          return h('button', {
+            class: 'chip', onclick: () => { ids.splice(i, 1); paint(); }
+          }, h('span', { class: 'dot', style: { background: c?.hex } }), (c?.name || 'цвет') + ' ✕');
+        }),
+        ids.length < MAX_COLORS ? h('button', {
+          class: 'chip add', onclick: async () => {
+            const id = await openListPicker('colors', { exclude: ids, suggest });
+            if (!id) return;
+            ids.push(id);
+            paint();
+          }
+        }, '+ Цвет') : null
+      )
+    );
+  }
+  paint();
+  return box;
+}
+
 /* ---------- форма вещи ---------- */
 function openItemForm(item, isNew = false) {
   return new Promise(res => {
@@ -1901,6 +1930,9 @@ function openItemForm(item, isNew = false) {
       lining: (item.material?.lining || []).map(p => ({ ...p }))
     };
     let brandId = item.brandId || null;
+    const colorIds = [...(item.colorIds || [])];
+    // подсказка для новых цветов палитры — оттенки, снятые с этой фотографии
+    const suggest = (item.colors || []).map(c => c.hex);
 
     const subSel = h('select', {});
     const catSel = h('select', {
@@ -1951,6 +1983,7 @@ function openItemForm(item, isNew = false) {
         h('label', { class: 'field' }, h('span', {}, 'Категория'), catSel),
         h('label', { class: 'field' }, h('span', {}, 'Подкатегория'), subSel),
         listField('Производитель', 'brands', () => brandId, v => { brandId = v; }),
+        colorsGroup(colorIds, suggest),
         compositionGroup('Состав', mat.main),
         compositionGroup('Подкладка', mat.lining),
         h('label', { class: 'field' }, h('span', {}, 'Цена'),
@@ -1975,6 +2008,7 @@ function openItemForm(item, isNew = false) {
             // значение списка могли удалить, пока форма была открыта
             const alive = (key, id) => (listEntry(key, id) ? id : null);
             item.brandId = alive('brands', brandId);
+            item.colorIds = colorIds.filter(id => alive('colors', id));
             item.material = {
               main: mat.main.filter(p => alive('materials', p.id)),
               lining: mat.lining.filter(p => alive('materials', p.id))
@@ -2108,11 +2142,12 @@ function renderItemCard(root, item) {
 function filteredItems() {
   let list = visibleItems();
   if (filters.favOnly) list = list.filter(i => i.fav);
-  if (filters.color) list = list.filter(i => itemMatchesColor(i, filters.color));
+  if (filters.color === NO_COLOR) list = list.filter(i => !(i.colorIds || []).length);
+  else if (filters.color) list = list.filter(i => (i.colorIds || []).includes(filters.color));
   const hue = i => {
-    const c = i.colors?.[0]?.hex;
+    const c = listEntry('colors', (i.colorIds || [])[0])?.hex;
     if (!c) return 999;
-    const [L, a, b] = oklab(...[1, 3, 5].map(k => parseInt(c.substr(k, 2), 16)));
+    const [L, a, b] = oklab(...hexToRgb(c));
     return Math.atan2(b, a);
   };
   const sorters = {
@@ -2125,19 +2160,24 @@ function filteredItems() {
 }
 
 /* ---------- палитра гардероба ---------- */
+/** Палитра для фильтра — та же, что в карточках: своя, а не вычисленная. */
 function closetColors() {
-  // группируем цвета вещей по базовой палитре
   const counts = new Map();
   for (const it of visibleItems()) {
-    const seen = new Set();
-    for (const c of it.colors || []) {
-      if (c.ratio < 0.08) continue;
-      const base = BASE_COLORS.find(bc => itemMatchesColor({ colors: [c] }, bc.hex, 0.13)) || null;
-      if (base && !seen.has(base.hex)) { seen.add(base.hex); counts.set(base.hex, (counts.get(base.hex) || 0) + 1); }
-    }
+    for (const id of new Set(it.colorIds || [])) counts.set(id, (counts.get(id) || 0) + 1);
   }
-  return BASE_COLORS.filter(c => counts.has(c.hex)).map(c => ({ ...c, n: counts.get(c.hex) }))
-    .sort((a, b) => b.n - a.n);
+  return listItems('colors').map(c => ({ ...c, n: counts.get(c.id) || 0 }));
+}
+
+/** Ближайший цвет палитры — для цвета, снятого камерой. */
+function nearestColor(hex) {
+  let best = null, bd = 1e9;
+  for (const c of listItems('colors')) {
+    if (!c.hex) continue;
+    const d = colorDist(hex, c.hex);
+    if (d < bd) { bd = d; best = c; }
+  }
+  return best;
 }
 
 /* ---------- менеджер категорий ---------- */
@@ -2250,6 +2290,8 @@ function openSubManager(cat, onDone) {
  * nav.archive — то же дерево, но по архивным вещам и архивным категориям.
  */
 const OTHER = '__other';
+// отдельное значение фильтра: вещи, которым цвет ещё не проставлен
+const NO_COLOR = '__nocolor';
 // высота закреплённой строки внизу — должна совпадать с .service-bar в стилях
 const SERVICE_BAR_H = 42;
 const nav = { all: false, archive: false, catId: null, subId: null, itemId: null };
@@ -2647,16 +2689,28 @@ function renderAll(root) {
   const palette = closetColors();
   const list = filteredItems();
 
+  const noColor = visibleItems().filter(i => !(i.colorIds || []).length).length;
+  const pick = v => { filters.color = filters.color === v ? null : v; emit(); };
+
   const colorRow = h('div', { class: 'palette-row' },
     h('button', {
       class: 'swatch', title: 'Сканировать цвет камерой',
       style: { background: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' },
-      onclick: async () => { const hex = await scanColorFromCamera(); if (hex) { filters.color = hex; emit(); } }
+      onclick: async () => {
+        const hex = await scanColorFromCamera();
+        const near = hex && nearestColor(hex);
+        if (near) { filters.color = near.id; emit(); }
+      }
     }, '📷'),
-    ...(palette.length ? palette : BASE_COLORS).map(c => h('button', {
-      class: 'swatch' + (filters.color === c.hex ? ' sel' : ''),
+    // вещи без цвета иначе не найти: отдельного места у них нет
+    noColor ? h('button', {
+      class: 'swatch none' + (filters.color === NO_COLOR ? ' sel' : ''),
+      title: `Без цвета · ${noColor}`, onclick: () => pick(NO_COLOR)
+    }, '∅') : null,
+    ...palette.map(c => h('button', {
+      class: 'swatch' + (filters.color === c.id ? ' sel' : '') + (c.n ? '' : ' unused'),
       style: { background: c.hex }, title: `${c.name}${c.n ? ' · ' + c.n : ''}`,
-      onclick: () => { filters.color = filters.color === c.hex ? null : c.hex; emit(); }
+      onclick: () => pick(c.id)
     }))
   );
 
@@ -2664,7 +2718,10 @@ function renderAll(root) {
     h('span', { class: 'small muted spacer' }, nItems(list.length)),
     filters.color ? h('button', {
       class: 'chip active', onclick: () => { filters.color = null; emit(); }
-    }, h('span', { class: 'dot', style: { background: filters.color } }), colorName(filters.color), ' ✕') : null,
+    },
+      filters.color === NO_COLOR ? null
+        : h('span', { class: 'dot', style: { background: listEntry('colors', filters.color)?.hex } }),
+      filters.color === NO_COLOR ? 'Без цвета' : listEntry('colors', filters.color)?.name || 'Цвет', ' ✕') : null,
     h('button', {
       class: 'chip' + (filters.favOnly ? ' active' : ''),
       onclick: () => { filters.favOnly = !filters.favOnly; emit(); }

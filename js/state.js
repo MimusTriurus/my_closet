@@ -83,10 +83,25 @@ const DEFAULT_MATERIALS = [
   'Полиэстер', 'Полиамид', 'Эластан', 'Акрил', 'Кожа', 'Замша'
 ];
 
+/**
+ * Палитра, с которой начинает гардероб: дальше её переименовывают, удаляют
+ * и дополняют. Пустой список означал бы, что первая же вещь требует завести
+ * цвет с нуля.
+ */
+const DEFAULT_COLORS = [
+  { name: 'Чёрный', hex: '#1a1a1a' }, { name: 'Белый', hex: '#f5f3ef' },
+  { name: 'Серый', hex: '#808080' }, { name: 'Бежевый', hex: '#e0cfb4' },
+  { name: 'Коричневый', hex: '#8b5e3c' }, { name: 'Красный', hex: '#c8443c' },
+  { name: 'Оранжевый', hex: '#e08a3c' }, { name: 'Жёлтый', hex: '#e3c34a' },
+  { name: 'Зелёный', hex: '#6f9a5c' }, { name: 'Голубой', hex: '#6ba3cc' },
+  { name: 'Синий', hex: '#2b4472' }, { name: 'Фиолетовый', hex: '#7b5ea7' },
+  { name: 'Розовый', hex: '#d98fb0' }
+];
+
 export const LIST_DEFS = {
   brands: { title: 'Производитель', add: 'Добавить производителя', one: 'производителя', seed: [] },
   materials: { title: 'Материал', add: 'Добавить материал', one: 'материал', seed: DEFAULT_MATERIALS },
-  colors: { title: 'Цвет', add: 'Добавить цвет', one: 'цвет', seed: [] }
+  colors: { title: 'Цвет', add: 'Добавить цвет', one: 'цвет', seed: DEFAULT_COLORS }
 };
 
 const listKey = key => 'list:' + key;
@@ -94,11 +109,12 @@ const listKey = key => 'list:' + key;
 async function loadLists() {
   for (const key of Object.keys(LIST_DEFS)) {
     const rec = await dbGet('meta', listKey(key));
-    if (rec) { state.lists[key] = rec.items || []; continue; }
-    // первого запуска у списка ещё не было — засеваем и запоминаем, что засеяли:
-    // иначе удалённые значения возвращались бы при каждой загрузке
-    state.lists[key] = (LIST_DEFS[key].seed || []).map(name => ({ id: uid('l'), name }));
-    await dbPut('meta', { id: listKey(key), items: state.lists[key] });
+    // засеваем один раз и помним об этом: иначе удалённые значения
+    // возвращались бы при каждой загрузке
+    if (rec && (rec.seeded || rec.items?.length)) { state.lists[key] = rec.items || []; continue; }
+    state.lists[key] = (LIST_DEFS[key].seed || [])
+      .map(x => ({ id: uid('l'), ...(typeof x === 'string' ? { name: x } : x) }));
+    await dbPut('meta', { id: listKey(key), items: state.lists[key], seeded: true });
   }
 }
 
@@ -107,7 +123,7 @@ export const listEntry = (key, id) => listItems(key).find(e => e.id === id) || n
 export const listName = (key, id) => listEntry(key, id)?.name || '';
 
 async function saveList(key) {
-  await dbPut('meta', { id: listKey(key), items: state.lists[key] });
+  await dbPut('meta', { id: listKey(key), items: state.lists[key], seeded: true });
   emit();
 }
 

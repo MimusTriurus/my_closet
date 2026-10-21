@@ -158,6 +158,12 @@ main#views{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scro
 .part-row .pct{width:66px;flex:0 0 auto;text-align:center}
 /* второй путь в выборе: доступен, но не бросается в глаза */
 .btn.quiet{background:transparent;border-color:transparent;color:var(--muted);font-size:13px;font-weight:500}
+/* цвет, которого ещё нет ни на одной вещи, и «без цвета» */
+.swatch.unused{opacity:.4}
+.swatch.none{background:var(--surface);border:1px dashed var(--muted);color:var(--muted);
+  display:flex;align-items:center;justify-content:center;font-size:14px}
+.chip.add{border-style:dashed;color:var(--muted)}
+input[type=color].hex{width:100%;height:42px;padding:2px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--surface)}
 .row .cur{width:58px;flex:0 0 auto;text-align:center}
 
 

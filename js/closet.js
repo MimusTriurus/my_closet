@@ -7,7 +7,7 @@ import { openListPicker, entryName } from './fields.js';
 import {
   state, saveItem, saveItems, deleteItem, saveCat, deleteCat, catById, subById, countInCat,
   visibleItems, archivedItems, itemById, closetCats, archiveCats, countInArcCat, countIn, SCOPE_ARCHIVE,
-  createItem, sortingCat, emit, listEntry, listItems, lastCurrency, wearCount
+  createItem, sortingCat, emit, listEntry, listItems, lastCurrency, wearCount, closetItems
 } from './state.js';
 import { uid } from './db.js';
 import { extractPalette, oklab, hexToRgb, colorDist } from './color.js';
@@ -373,9 +373,12 @@ function renderItemCard(root, item) {
           }))
           : h('span', { class: 'v muted' }, 'не указаны')),
       detail('Состав', composition(item.material?.main), 'не указан'),
-      detail('Подкладка', composition(item.material?.lining), 'не указана'),
+      // подкладка и комментарий — дополнительные: пустыми не показываются,
+      // напоминать о них незачем. В форме поля на месте
+      composition(item.material?.lining)
+        ? detail('Подкладка', composition(item.material.lining)) : null,
       detail('Цена', item.price ? `${item.price.value} ${item.price.cur}` : '', 'не указана'),
-      detail('Комментарий', item.note, 'не заполнен')
+      item.note ? detail('Комментарий', item.note) : null
     ) : null,
 
     h('div', { class: 'card-actions' },
@@ -411,7 +414,7 @@ function renderItemCard(root, item) {
 
 /* ---------- фильтрация ---------- */
 export function filteredItems() {
-  let list = visibleItems();
+  let list = closetItems();
   if (filters.favOnly) list = list.filter(i => i.fav);
   if (filters.color === NO_COLOR) list = list.filter(i => !(i.colorIds || []).length);
   else if (filters.color) list = list.filter(i => (i.colorIds || []).includes(filters.color));
@@ -434,7 +437,7 @@ export function filteredItems() {
 /** Палитра для фильтра — та же, что в карточках: своя, а не вычисленная. */
 function closetColors() {
   const counts = new Map();
-  for (const it of visibleItems()) {
+  for (const it of closetItems()) {
     for (const id of new Set(it.colorIds || [])) counts.set(id, (counts.get(id) || 0) + 1);
   }
   return listItems('colors').map(c => ({ ...c, n: counts.get(c.id) || 0 }));
@@ -824,8 +827,8 @@ function renderRoot(root) {
   fill(root,
     h('div', { class: 'list' },
       navRow({
-        thumbNode: collageThumb(visibleItems()), title: 'Все вещи',
-        note: nItems(visibleItems().length),
+        thumbNode: collageThumb(closetItems()), title: 'Все вещи',
+        note: nItems(closetItems().length),
         onclick: () => { nav.all = true; emit(); }
       }),
       ...rest.map(c => navRow({
@@ -960,7 +963,7 @@ function renderAll(root) {
   const palette = closetColors();
   const list = filteredItems();
 
-  const noColor = visibleItems().filter(i => !(i.colorIds || []).length).length;
+  const noColor = closetItems().filter(i => !(i.colorIds || []).length).length;
   const pick = v => { filters.color = filters.color === v ? null : v; emit(); };
 
   const colorRow = h('div', { class: 'palette-row' },
@@ -1008,7 +1011,7 @@ function renderAll(root) {
   fill(root, colorRow, controls,
     list.length ? h('div', { class: 'grid' }, list.map(it => itemTile(it))) : h('div', { class: 'empty' },
       h('div', { class: 'big' }, '🧺'),
-      h('p', {}, visibleItems().length
+      h('p', {}, closetItems().length
         ? 'Ничего не найдено по фильтрам'
         : 'Гардероб пуст. Чтобы добавить вещи, нажмите «+» внизу справа.')),
     h('button', { class: 'fab', onclick: startAddItem, title: 'Добавить вещь' }, '+')

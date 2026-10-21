@@ -390,8 +390,13 @@ export const countInArcCat = id => archivedItems().filter(i => i.arcCatId === id
 /** Сколько вещей в категории — с учётом того, гардеробная она или архивная. */
 export const countIn = cat => cat.scope === SCOPE_ARCHIVE ? countInArcCat(cat.id) : countInCat(cat.id);
 
-/** Вещи, которые считаются гардеробом: без служебных категорий. */
-export const closetCount = () => visibleItems().filter(i => !isSystemCat(i.catId)).length;
+/**
+ * Гардероб как таковой: без архива и без рабочих полок. «Сортировка» ещё не
+ * разобрана, «На рассмотрении» ещё не куплено — ни то, ни другое гардеробом
+ * пока не является, поэтому «Все вещи», счётчики и фильтры берут этот список.
+ */
+export const closetItems = () => visibleItems().filter(i => !isSystemCat(i.catId));
+export const closetCount = () => closetItems().length;
 export const countInSystem = system =>
   countInCat(state.cats.find(c => c.system === system)?.id);
 

@@ -5,6 +5,7 @@ import { fill, h, urlFor, openModal, toast, confirmDialog, promptDialog, actionS
 import { state, saveTrip, deleteTrip, itemById, outfitById, emit } from './state.js';
 import { uid } from './db.js';
 import { pickItems, pickOutfits } from './picker.js';
+import { itemLabel } from './closet.js';
 import { bgCss } from './bgs.js';
 
 const progress = t => ({
@@ -143,7 +144,7 @@ function openTrip(trip) {
       }),
       h('img', { class: 'thumb', src: urlFor(it.img), style: { background: bgCss(it.bg) } }),
       h('div', { class: 't' },
-        h('b', { style: { textDecoration: checked ? 'line-through' : '' } }, it.name || 'Без названия')),
+        h('b', { style: { textDecoration: checked ? 'line-through' : '' } }, itemLabel(it))),
       h('button', {
         class: 'btn btn-sm', title: 'Убрать из поездки',
         onclick: async () => {

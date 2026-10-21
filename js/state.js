@@ -1,9 +1,10 @@
 // Единое состояние приложения + персистентность в IndexedDB.
-import { dbAll, dbPut, dbDel, uid } from './db.js';
+import { dbAll, dbGet, dbPut, dbDel, uid } from './db.js';
 import { nItems } from './ui.js';
 
 export const state = {
-  items: [], outfits: [], collections: [], cats: [], calendar: [], trips: []
+  items: [], outfits: [], collections: [], cats: [], calendar: [], trips: [],
+  lists: { brands: [], materials: [], colors: [] }
 };
 
 const listeners = new Set();
@@ -67,16 +68,132 @@ async function adoptOrphans() {
     : `${nItems(lost.length)} без категории перенесены в «${cat.name}»`);
 }
 
+
+/* ---------- списочные поля ---------- */
+/**
+ * Поле, по которому ищут, — всегда выбор из общего списка; поле, которое
+ * только читают, — свободный ввод. Иначе один и тот же шартрез в разных
+ * карточках напишется тремя способами, и фильтр покажет три значения.
+ *
+ * Списки лежат в meta одной записью на список — отдельное хранилище ради
+ * десятка строк заводить незачем.
+ */
+const DEFAULT_MATERIALS = [
+  'Хлопок', 'Лён', 'Вискоза', 'Шерсть', 'Кашемир', 'Шёлк',
+  'Полиэстер', 'Полиамид', 'Эластан', 'Акрил', 'Кожа', 'Замша'
+];
+
+export const LIST_DEFS = {
+  brands: { title: 'Производитель', add: 'Добавить производителя', one: 'производителя', seed: [] },
+  materials: { title: 'Материал', add: 'Добавить материал', one: 'материал', seed: DEFAULT_MATERIALS },
+  colors: { title: 'Цвет', add: 'Добавить цвет', one: 'цвет', seed: [] }
+};
+
+const listKey = key => 'list:' + key;
+
+async function loadLists() {
+  for (const key of Object.keys(LIST_DEFS)) {
+    const rec = await dbGet('meta', listKey(key));
+    if (rec) { state.lists[key] = rec.items || []; continue; }
+    // первого запуска у списка ещё не было — засеваем и запоминаем, что засеяли:
+    // иначе удалённые значения возвращались бы при каждой загрузке
+    state.lists[key] = (LIST_DEFS[key].seed || []).map(name => ({ id: uid('l'), name }));
+    await dbPut('meta', { id: listKey(key), items: state.lists[key] });
+  }
+}
+
+export const listItems = key => state.lists[key] || [];
+export const listEntry = (key, id) => listItems(key).find(e => e.id === id) || null;
+export const listName = (key, id) => listEntry(key, id)?.name || '';
+
+async function saveList(key) {
+  await dbPut('meta', { id: listKey(key), items: state.lists[key] });
+  emit();
+}
+
+export async function addListEntry(key, patch) {
+  const entry = { id: uid('l'), ...patch };
+  state.lists[key] = [...listItems(key), entry];
+  await saveList(key);
+  return entry;
+}
+export async function updateListEntry(key, id, patch) {
+  const entry = listEntry(key, id);
+  if (!entry) return null;
+  Object.assign(entry, patch);
+  await saveList(key);
+  return entry;
+}
+
+/** Сколько вещей ссылается на значение списка — чтобы правка не была вслепую. */
+export function listUsage(key, id) {
+  return state.items.filter(it => {
+    if (key === 'brands') return it.brandId === id;
+    if (key === 'colors') return (it.colorIds || []).includes(id);
+    const m = it.material || {};
+    return ['main', 'lining'].some(g => (m[g] || []).some(c => c.id === id));
+  }).length;
+}
+
+/**
+ * Перевод вещей с одного значения списка на другое; newId === null — просто
+ * снять отметку. Нужен при удалении: вещь, потерявшая один цвет из трёх,
+ * нигде не всплывает, поэтому удаление предлагает перенос, а не спрашивает
+ * «точно?».
+ */
+export async function replaceListRef(key, id, newId = null) {
+  const touched = [];
+  for (const it of state.items) {
+    let changed = false;
+    if (key === 'brands') {
+      if (it.brandId === id) { it.brandId = newId; changed = true; }
+    } else if (key === 'colors') {
+      const list = it.colorIds || [];
+      if (list.includes(id)) {
+        const next = list.filter(x => x !== id);
+        if (newId && !next.includes(newId)) next.push(newId);
+        it.colorIds = next;
+        changed = true;
+      }
+    } else {
+      const m = it.material || {};
+      for (const grp of ['main', 'lining']) {
+        const list = m[grp] || [];
+        if (!list.some(c => c.id === id)) continue;
+        // если новое значение в составе уже есть, строка не задваивается
+        m[grp] = !newId || list.some(c => c.id === newId)
+          ? list.filter(c => c.id !== id)
+          : list.map(c => c.id === id ? { ...c, id: newId } : c);
+        changed = true;
+      }
+      if (changed) it.material = m;
+    }
+    if (changed) touched.push(it);
+  }
+  if (touched.length) await saveItems(touched);
+}
+
+export async function deleteListEntry(key, id, newId = null) {
+  await replaceListRef(key, id, newId);
+  state.lists[key] = listItems(key).filter(e => e.id !== id);
+  await saveList(key);
+}
+
 /** Единая точка создания вещи — чтобы все новые поля появлялись в одном месте. */
 export function createItem(patch = {}) {
   return {
     id: uid('it'),
-    name: '',
     catId: null,
     subId: null,
     img: null,
     colors: [],
+    colorIds: [],
     bg: 'none',
+
+    brandId: null,
+    material: { main: [], lining: [] },   // [{ id, pct }] — проценты необязательны
+    price: null,                          // { value, cur }
+    note: '',
     fav: false,
     archived: false,
     arcCatId: null,     // место в архиве — своё, гардеробное при этом сохраняется,
@@ -126,6 +243,7 @@ export async function loadAll() {
   } else {
     state.cats = cats.sort((a, b) => a.order - b.order);
   }
+  await loadLists();
   await ensureSystemCats();
   await adoptOrphans();
 }
@@ -270,6 +388,20 @@ export async function saveDay(day) {
   return day;
 }
 export const dayByDate = date => state.calendar.find(d => d.id === date);
+
+/**
+ * Счётчик носок не хранится числом, а считается по календарю: день, в котором
+ * вещь встретилась, даёт +1, сколько бы образов на нём ни стояло. Разойтись
+ * с реальностью он не может и чинить его не нужно.
+ */
+export const wearCount = itemId => state.calendar.filter(d =>
+  (d.itemIds || []).includes(itemId) ||
+  (d.outfitIds || []).some(oid => outfitById(oid)?.layers?.some(l => l.itemId === itemId))
+).length;
+
+/** Валюта последней заполненной цены — разумное умолчание для следующей вещи. */
+export const lastCurrency = () =>
+  state.items.find(i => i.price?.cur)?.price.cur || '₽';
 
 /* ---------- trips ---------- */
 export async function saveTrip(t) {

@@ -177,6 +177,31 @@ main#views{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scro
 .card-photo img{width:100%;height:100%;object-fit:contain;padding:10px}
 .card-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}
 .card-actions .btn{flex:1}
+/* поля карточки: подробности под кнопкой «Подробнее» */
+.lrow .worn{font-size:12px;color:var(--muted);white-space:nowrap;align-self:center}
+.btn.more{margin-top:10px;color:var(--muted);font-weight:600}
+.card-details{margin-top:8px}
+.detail{
+  display:flex;gap:10px;align-items:baseline;
+  padding:9px 2px;border-bottom:1px solid var(--line);
+}
+.detail:last-child{border-bottom:0}
+.detail .k{flex:0 0 96px;font-size:12px;color:var(--muted);font-weight:600}
+.detail .v{flex:1;min-width:0;font-size:14px;word-break:break-word}
+.detail .v.chips{display:flex;flex-wrap:wrap;gap:6px;overflow:visible}
+
+/* значение, выбираемое из общего списка */
+.btn.pick{justify-content:flex-start;text-align:left;font-weight:500}
+.lrow.on{border-color:var(--accent)}
+.lrow .tick{color:var(--accent);font-weight:700}
+
+/* строка состава: материал, проценты, «убрать» */
+.part-row{gap:6px;margin-bottom:6px}
+.part-row .pct{width:66px;flex:0 0 auto;text-align:center}
+/* второй путь в выборе: доступен, но не бросается в глаза */
+.btn.quiet{background:transparent;border-color:transparent;color:var(--muted);font-size:13px;font-weight:500}
+.row .cur{width:58px;flex:0 0 auto;text-align:center}
+
 
 /* ---------- color dots ---------- */
 .dots{display:flex;gap:3px}
@@ -555,7 +580,7 @@ function actionSheet(title, actions) {
       title,
       body: h('div', { class: 'list' },
         actions.map(a => h('button', {
-          class: 'btn block' + (a.danger ? ' danger' : ''),
+          class: 'btn block' + (a.danger ? ' danger' : '') + (a.muted ? ' quiet' : ''),
           style: { textAlign: 'left', marginBottom: '2px' },
           onclick: () => { done = true; res(a.id); m.close(); }
         }, (a.icon ? a.icon + '  ' : '') + a.label))
@@ -721,7 +746,8 @@ const bgCss = id => bgById(id).css;
 // Единое состояние приложения + персистентность в IndexedDB.
 
 const state = {
-  items: [], outfits: [], collections: [], cats: [], calendar: [], trips: []
+  items: [], outfits: [], collections: [], cats: [], calendar: [], trips: [],
+  lists: { brands: [], materials: [], colors: [] }
 };
 
 const listeners = new Set();
@@ -785,16 +811,132 @@ async function adoptOrphans() {
     : `${nItems(lost.length)} без категории перенесены в «${cat.name}»`);
 }
 
+
+/* ---------- списочные поля ---------- */
+/**
+ * Поле, по которому ищут, — всегда выбор из общего списка; поле, которое
+ * только читают, — свободный ввод. Иначе один и тот же шартрез в разных
+ * карточках напишется тремя способами, и фильтр покажет три значения.
+ *
+ * Списки лежат в meta одной записью на список — отдельное хранилище ради
+ * десятка строк заводить незачем.
+ */
+const DEFAULT_MATERIALS = [
+  'Хлопок', 'Лён', 'Вискоза', 'Шерсть', 'Кашемир', 'Шёлк',
+  'Полиэстер', 'Полиамид', 'Эластан', 'Акрил', 'Кожа', 'Замша'
+];
+
+const LIST_DEFS = {
+  brands: { title: 'Производитель', add: 'Добавить производителя', one: 'производителя', seed: [] },
+  materials: { title: 'Материал', add: 'Добавить материал', one: 'материал', seed: DEFAULT_MATERIALS },
+  colors: { title: 'Цвет', add: 'Добавить цвет', one: 'цвет', seed: [] }
+};
+
+const listKey = key => 'list:' + key;
+
+async function loadLists() {
+  for (const key of Object.keys(LIST_DEFS)) {
+    const rec = await dbGet('meta', listKey(key));
+    if (rec) { state.lists[key] = rec.items || []; continue; }
+    // первого запуска у списка ещё не было — засеваем и запоминаем, что засеяли:
+    // иначе удалённые значения возвращались бы при каждой загрузке
+    state.lists[key] = (LIST_DEFS[key].seed || []).map(name => ({ id: uid('l'), name }));
+    await dbPut('meta', { id: listKey(key), items: state.lists[key] });
+  }
+}
+
+const listItems = key => state.lists[key] || [];
+const listEntry = (key, id) => listItems(key).find(e => e.id === id) || null;
+const listName = (key, id) => listEntry(key, id)?.name || '';
+
+async function saveList(key) {
+  await dbPut('meta', { id: listKey(key), items: state.lists[key] });
+  emit();
+}
+
+async function addListEntry(key, patch) {
+  const entry = { id: uid('l'), ...patch };
+  state.lists[key] = [...listItems(key), entry];
+  await saveList(key);
+  return entry;
+}
+async function updateListEntry(key, id, patch) {
+  const entry = listEntry(key, id);
+  if (!entry) return null;
+  Object.assign(entry, patch);
+  await saveList(key);
+  return entry;
+}
+
+/** Сколько вещей ссылается на значение списка — чтобы правка не была вслепую. */
+function listUsage(key, id) {
+  return state.items.filter(it => {
+    if (key === 'brands') return it.brandId === id;
+    if (key === 'colors') return (it.colorIds || []).includes(id);
+    const m = it.material || {};
+    return ['main', 'lining'].some(g => (m[g] || []).some(c => c.id === id));
+  }).length;
+}
+
+/**
+ * Перевод вещей с одного значения списка на другое; newId === null — просто
+ * снять отметку. Нужен при удалении: вещь, потерявшая один цвет из трёх,
+ * нигде не всплывает, поэтому удаление предлагает перенос, а не спрашивает
+ * «точно?».
+ */
+async function replaceListRef(key, id, newId = null) {
+  const touched = [];
+  for (const it of state.items) {
+    let changed = false;
+    if (key === 'brands') {
+      if (it.brandId === id) { it.brandId = newId; changed = true; }
+    } else if (key === 'colors') {
+      const list = it.colorIds || [];
+      if (list.includes(id)) {
+        const next = list.filter(x => x !== id);
+        if (newId && !next.includes(newId)) next.push(newId);
+        it.colorIds = next;
+        changed = true;
+      }
+    } else {
+      const m = it.material || {};
+      for (const grp of ['main', 'lining']) {
+        const list = m[grp] || [];
+        if (!list.some(c => c.id === id)) continue;
+        // если новое значение в составе уже есть, строка не задваивается
+        m[grp] = !newId || list.some(c => c.id === newId)
+          ? list.filter(c => c.id !== id)
+          : list.map(c => c.id === id ? { ...c, id: newId } : c);
+        changed = true;
+      }
+      if (changed) it.material = m;
+    }
+    if (changed) touched.push(it);
+  }
+  if (touched.length) await saveItems(touched);
+}
+
+async function deleteListEntry(key, id, newId = null) {
+  await replaceListRef(key, id, newId);
+  state.lists[key] = listItems(key).filter(e => e.id !== id);
+  await saveList(key);
+}
+
 /** Единая точка создания вещи — чтобы все новые поля появлялись в одном месте. */
 function createItem(patch = {}) {
   return {
     id: uid('it'),
-    name: '',
     catId: null,
     subId: null,
     img: null,
     colors: [],
+    colorIds: [],
     bg: 'none',
+
+    brandId: null,
+    material: { main: [], lining: [] },   // [{ id, pct }] — проценты необязательны
+    price: null,                          // { value, cur }
+    note: '',
     fav: false,
     archived: false,
     arcCatId: null,     // место в архиве — своё, гардеробное при этом сохраняется,
@@ -844,6 +986,7 @@ async function loadAll() {
   } else {
     state.cats = cats.sort((a, b) => a.order - b.order);
   }
+  await loadLists();
   await ensureSystemCats();
   await adoptOrphans();
 }
@@ -988,6 +1131,20 @@ async function saveDay(day) {
   return day;
 }
 const dayByDate = date => state.calendar.find(d => d.id === date);
+
+/**
+ * Счётчик носок не хранится числом, а считается по календарю: день, в котором
+ * вещь встретилась, даёт +1, сколько бы образов на нём ни стояло. Разойтись
+ * с реальностью он не может и чинить его не нужно.
+ */
+const wearCount = itemId => state.calendar.filter(d =>
+  (d.itemIds || []).includes(itemId) ||
+  (d.outfitIds || []).some(oid => outfitById(oid)?.layers?.some(l => l.itemId === itemId))
+).length;
+
+/** Валюта последней заполненной цены — разумное умолчание для следующей вещи. */
+const lastCurrency = () =>
+  state.items.find(i => i.price?.cur)?.price.cur || '₽';
 
 /* ---------- trips ---------- */
 async function saveTrip(t) {
@@ -1588,7 +1745,7 @@ import {
 import {
   state, saveItem, saveItems, deleteItem, saveCat, deleteCat, catById, subById, countInCat,
   visibleItems, archivedItems, itemById, closetCats, archiveCats, countInArcCat, countIn, SCOPE_ARCHIVE,
-  createItem, sortingCat, emit
+  createItem, sortingCat, emit, listEntry, lastCurrency, wearCount
 } from './state.js';
 
 // фильтры живут только в разделе «Все вещи» — по категориям ходит nav
@@ -1666,11 +1823,84 @@ async function startAddItem() {
   await addItemFlow(blob);
 }
 
+/* ---------- поля-списки и состав ---------- */
+/**
+ * Поле, значение которого выбирается из общего списка. Пустое не прячем:
+ * пустая строка напоминает, что её стоит заполнить.
+ */
+function listField(label, key, getId, setId) {
+  const btn = h('button', {
+    class: 'btn block pick', onclick: async () => {
+      const id = await openListPicker(key, { selected: getId() });
+      if (id === null) return;
+      setId(id || null);
+      paint();
+    }
+  });
+  const paint = () => {
+    const name = entryName(key, getId());
+    fill(btn, h('span', { class: name ? '' : 'muted' }, name || 'не указано'));
+  };
+  paint();
+  return h('label', { class: 'field' }, h('span', {}, label), btn);
+}
+
+/**
+ * Состав: строки добавляются по «+». Пустая строка под единственным материалом
+ * ничего не напоминает — правильного их числа не существует.
+ */
+const MAX_PARTS = 7;
+function compositionGroup(label, list) {
+  const box = h('div', {});
+  function paint() {
+    fill(box,
+      h('div', { class: 'section-title' }, label),
+      list.map((part, i) => h('div', { class: 'row part-row' },
+        h('button', {
+          class: 'btn pick spacer', onclick: async () => {
+            const id = await openListPicker('materials', { selected: part.id });
+            if (!id) return;
+            part.id = id;
+            paint();
+          }
+        }, entryName('materials', part.id) || 'не указан'),
+        h('input', {
+          type: 'number', class: 'pct', min: '1', max: '100', step: '1',
+          inputmode: 'numeric', placeholder: '%', value: part.pct ?? '',
+          oninput: e => {
+            const v = parseInt(e.target.value, 10);
+            part.pct = Number.isFinite(v) ? Math.min(100, Math.max(1, v)) : null;
+          }
+        }),
+        h('button', {
+          class: 'icon-btn', title: 'Убрать',
+          onclick: () => { list.splice(i, 1); paint(); }
+        }, '✕')
+      )),
+      list.length < MAX_PARTS ? h('button', {
+        class: 'btn block btn-add', onclick: async () => {
+          const id = await openListPicker('materials', {});
+          if (!id) return;
+          list.push({ id, pct: null });
+          paint();
+        }
+      }, '+ Материал') : null
+    );
+  }
+  paint();
+  return box;
+}
+
 /* ---------- форма вещи ---------- */
 function openItemForm(item, isNew = false) {
   return new Promise(res => {
     let resolved = false;
-    const nameInput = h('input', { type: 'text', value: item.name, placeholder: 'Например, белая рубашка' });
+    // правим копии: отмена не должна оставлять следов в вещи
+    const mat = {
+      main: (item.material?.main || []).map(p => ({ ...p })),
+      lining: (item.material?.lining || []).map(p => ({ ...p }))
+    };
+    let brandId = item.brandId || null;
 
     const subSel = h('select', {});
     const catSel = h('select', {
@@ -1679,7 +1909,7 @@ function openItemForm(item, isNew = false) {
 
     function fillSubs() {
       const cat = catById(catSel.value);
-      fill(subSel, 
+      fill(subSel,
         h('option', { value: '' }, '— без подкатегории —'),
         ...(cat?.subs || []).map(s => h('option', { value: s.id, selected: s.id === item.subId }, s.name))
       );
@@ -1704,21 +1934,28 @@ function openItemForm(item, isNew = false) {
       })
     ));
 
-    const colorsRow = h('div', { class: 'row', style: { gap: '6px', flexWrap: 'wrap' } },
-      (item.colors || []).map(c => h('div', { class: 'row', style: { gap: '4px' } },
-        h('span', { class: 'dot', style: { background: c.hex, width: '18px', height: '18px' } }),
-        h('span', { class: 'small muted' }, `${colorName(c.hex)} ${Math.round(c.ratio * 100)}%`)))
-    );
+    const priceInput = h('input', {
+      type: 'number', min: '0', step: '1', inputmode: 'numeric',
+      placeholder: 'не указана', value: item.price?.value ?? ''
+    });
+    const curInput = h('input', {
+      type: 'text', class: 'cur', maxlength: '4', value: item.price?.cur || lastCurrency()
+    });
+    const noteInput = h('textarea', { rows: '3', placeholder: 'не заполнен' }, item.note || '');
 
     const modal = openModal({
       title: isNew ? 'Новая вещь' : 'Редактировать',
       body: h('div', {},
         preview,
         h('div', { class: 'section-title' }, 'Фон карточки'), bgRow,
-        h('label', { class: 'field' }, h('span', {}, 'Название'), nameInput),
         h('label', { class: 'field' }, h('span', {}, 'Категория'), catSel),
         h('label', { class: 'field' }, h('span', {}, 'Подкатегория'), subSel),
-        h('div', { class: 'section-title' }, 'Цвета вещи'), colorsRow,
+        listField('Производитель', 'brands', () => brandId, v => { brandId = v; }),
+        compositionGroup('Состав', mat.main),
+        compositionGroup('Подкладка', mat.lining),
+        h('label', { class: 'field' }, h('span', {}, 'Цена'),
+          h('div', { class: 'row' }, priceInput, curInput)),
+        h('label', { class: 'field' }, h('span', {}, 'Комментарий'), noteInput),
         h('button', {
           class: 'btn block', style: { marginTop: '14px' }, onclick: async () => {
             const blob = await openImageEditor(item.img, { autoAI: false });
@@ -1733,9 +1970,20 @@ function openItemForm(item, isNew = false) {
         h('button', { class: 'btn', onclick: () => modal.close() }, 'Отмена'),
         h('button', {
           class: 'btn primary', onclick: async () => {
-            item.name = nameInput.value.trim() || (item.colors?.[0] ? colorName(item.colors[0].hex) + ' вещь' : 'Без названия');
             item.catId = catSel.value || null;
             item.subId = subSel.value || null;
+            // значение списка могли удалить, пока форма была открыта
+            const alive = (key, id) => (listEntry(key, id) ? id : null);
+            item.brandId = alive('brands', brandId);
+            item.material = {
+              main: mat.main.filter(p => alive('materials', p.id)),
+              lining: mat.lining.filter(p => alive('materials', p.id))
+            };
+            const price = parseFloat(priceInput.value);
+            item.price = Number.isFinite(price)
+              ? { value: price, cur: curInput.value.trim() || lastCurrency() }
+              : null;
+            item.note = noteInput.value.trim();
             await saveItem(item);
             resolved = true;
             modal.close();
@@ -1750,42 +1998,80 @@ function openItemForm(item, isNew = false) {
 }
 
 /* ---------- карточка вещи ---------- */
-/* ---------- карточка вещи ---------- */
 /**
- * Карточка — отдельный экран, а не окно: фотография и есть то, ради чего её
- * открывают, а в модальном окне она ужата полями. Возврат — тем же «‹»
- * в верхней панели, что и во всём гардеробе.
+ * Карточка — отдельный экран, а не окно: открывают её ради фотографии,
+ * а в окне фотография ужата полями. Возврат — тем же «‹» в верхней панели,
+ * что и во всём гардеробе.
  */
+// у какой вещи развёрнут нижний блок; при открытии карточки — ни у какой
+let cardOpen = null;
+
 function openItemCard(item) {
   nav.itemId = item.id;
+  cardOpen = null;
   emit();
 }
 
-const closeCard = () => { nav.itemId = null; emit(); };
+const closeCard = () => { nav.itemId = null; cardOpen = null; emit(); };
+
+/** Подпись вещи: производитель, а если его нет — категория. */
+const itemLabel = item =>
+  entryName('brands', item.brandId) || catById(item.catId)?.name || 'Вещь';
+
+const composition = parts => (parts || [])
+  .map(p => entryName('materials', p.id) + (p.pct ? ` ${p.pct}%` : ''))
+  .filter(Boolean).join(' · ');
+
+/** Строка подробностей: пустую не прячем — она напоминает, что не заполнена. */
+const detail = (label, value, empty = 'не указано') => h('div', { class: 'detail' },
+  h('span', { class: 'k' }, label),
+  h('span', { class: value ? 'v' : 'v muted' }, value || empty));
 
 function renderItemCard(root, item) {
   const place = [catById(item.catId)?.name, subById(item.catId, item.subId)?.name]
     .filter(Boolean).join(' › ') || 'Без категории';
+  const worn = wearCount(item.id);
+  const open = cardOpen === item.id;
 
   fill(root,
     h('div', { class: 'card-photo', style: { background: bgCss(item.bg) } },
-      h('img', { src: urlFor(item.img), alt: item.name || '' })),
+      h('img', { src: urlFor(item.img), alt: itemLabel(item) })),
 
     h('div', { class: 'lrow' },
       h('div', { class: 't' },
-        h('b', {}, item.name || '—'),
-        h('span', {}, place))),
+        h('b', { class: item.brandId ? '' : 'muted' },
+          entryName('brands', item.brandId) || 'производитель не указан'),
+        h('span', {}, place)),
+      h('span', { class: 'worn' }, worn ? plural(worn, 'надевание', 'надевания', 'надеваний') : 'ещё не надето')
+    ),
 
-    (item.colors || []).length ? h('div', { class: 'section-title' }, 'Цвета') : null,
-    h('div', { class: 'row', style: { gap: '6px', flexWrap: 'wrap' } },
-      (item.colors || []).map(c => h('div', {
-        class: 'chip',
-        onclick: () => {
-          filters.color = c.hex;
-          nav.itemId = null; nav.archive = false; nav.catId = null; nav.subId = null; nav.all = true;
-          emit();
-        }
-      }, h('span', { class: 'dot', style: { background: c.hex } }), colorName(c.hex)))),
+    // цена — цифра, которую не всегда хочется видеть, поэтому блок всегда
+    // открывается свёрнутым и своё состояние не запоминает
+    h('button', {
+      class: 'btn block more' + (open ? ' on' : ''),
+      onclick: () => { cardOpen = open ? null : item.id; emit(); }
+    }, open ? 'Свернуть ⌃' : 'Подробнее ⌄'),
+
+    open ? h('div', { class: 'card-details' },
+      h('div', { class: 'detail' },
+        h('span', { class: 'k' }, 'Цвета'),
+        (item.colorIds || []).length
+          ? h('span', { class: 'v chips' }, (item.colorIds || []).map(id => {
+            const c = listEntry('colors', id);
+            return c ? h('span', {
+              class: 'chip', onclick: () => {
+                filters.color = c.id;
+                nav.itemId = null; nav.archive = false; nav.catId = null; nav.subId = null; nav.all = true;
+                emit();
+              }
+            }, h('span', { class: 'dot', style: { background: c.hex } }), c.name) : null;
+          }))
+          : h('span', { class: 'v muted' }, 'не указаны')),
+      detail('Состав', composition(item.material?.main), 'не указан'),
+      detail('Подкладка', composition(item.material?.lining), 'не указана'),
+      detail('Цена', item.price ? `${item.price.value} ${item.price.cur}` : '', 'не указана'),
+      detail('Комментарий', item.note, 'не заполнен')
+    ) : null,
 
     h('div', { class: 'card-actions' },
       h('button', {
@@ -1832,7 +2118,7 @@ function filteredItems() {
   const sorters = {
     new: (a, b) => b.createdAt - a.createdAt,
     old: (a, b) => a.createdAt - b.createdAt,
-    name: (a, b) => (a.name || '').localeCompare(b.name || '', 'ru'),
+    name: (a, b) => entryName('brands', a.brandId).localeCompare(entryName('brands', b.brandId), 'ru'),
     color: (a, b) => hue(a) - hue(b)
   };
   return list.sort(sorters[filters.sort] || sorters.new);
@@ -2003,7 +2289,7 @@ const latestIn = (catId, subId, arc) => itemsIn(catId, subId, arc)[0] || null;
 function closetNav() {
   if (nav.itemId) {
     const it = itemById(nav.itemId);
-    if (it) return { title: it.name || 'Вещь', back: closeCard };
+    if (it) return { title: itemLabel(it), back: closeCard };
   }
   if (nav.all) return { title: 'Все вещи', back: goRoot };
   if (nav.archive && !nav.catId) return { title: 'Архив вещей', back: goRoot };
@@ -2314,10 +2600,10 @@ const itemTile = (it, selectable = false) => {
       emit();
     }
   },
-    h('img', { src: urlFor(it.img), alt: it.name }),
+    h('img', { src: urlFor(it.img), alt: itemLabel(it) }),
     it.fav && !selectable ? h('span', { class: 'fav' }, '★') : null,
     selectable ? h('span', { class: 'check' + (picked ? ' on' : '') }, picked ? '✓' : '') : null,
-    it.name ? h('span', { class: 'lbl' }, it.name) : null
+    it.brandId ? h('span', { class: 'lbl' }, entryName('brands', it.brandId)) : null
   );
 };
 
@@ -2387,7 +2673,7 @@ function renderAll(root) {
       style: { width: 'auto', padding: '5px 8px', fontSize: '12px' },
       onchange: e => { filters.sort = e.target.value; emit(); }
     },
-      [['new', 'Сначала новые'], ['old', 'Сначала старые'], ['name', 'По названию'], ['color', 'По цвету']]
+      [['new', 'Сначала новые'], ['old', 'Сначала старые'], ['name', 'По производителю'], ['color', 'По цвету']]
         .map(([v, t]) => h('option', { value: v, selected: filters.sort === v }, t)))
   );
 
@@ -2944,7 +3230,7 @@ function openTrip(trip) {
       }),
       h('img', { class: 'thumb', src: urlFor(it.img), style: { background: bgCss(it.bg) } }),
       h('div', { class: 't' },
-        h('b', { style: { textDecoration: checked ? 'line-through' : '' } }, it.name || 'Без названия')),
+        h('b', { style: { textDecoration: checked ? 'line-through' : '' } }, itemLabel(it))),
       h('button', {
         class: 'btn btn-sm', title: 'Убрать из поездки',
         onclick: async () => {

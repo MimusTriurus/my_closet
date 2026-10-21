@@ -3,10 +3,11 @@ import {
   fill, h, qs, urlFor, toast, openModal, confirmDialog, promptDialog, actionSheet,
   alertDialog, busy, plural, nItems
 } from './ui.js';
+import { openListPicker, entryName } from './fields.js';
 import {
   state, saveItem, saveItems, deleteItem, saveCat, deleteCat, catById, subById, countInCat,
   visibleItems, archivedItems, itemById, closetCats, archiveCats, countInArcCat, countIn, SCOPE_ARCHIVE,
-  createItem, sortingCat, emit
+  createItem, sortingCat, emit, listEntry, lastCurrency, wearCount
 } from './state.js';
 import { uid } from './db.js';
 import { BASE_COLORS, colorName, itemMatchesColor, extractPalette, oklab } from './color.js';
@@ -89,11 +90,84 @@ export async function startAddItem() {
   await addItemFlow(blob);
 }
 
+/* ---------- поля-списки и состав ---------- */
+/**
+ * Поле, значение которого выбирается из общего списка. Пустое не прячем:
+ * пустая строка напоминает, что её стоит заполнить.
+ */
+function listField(label, key, getId, setId) {
+  const btn = h('button', {
+    class: 'btn block pick', onclick: async () => {
+      const id = await openListPicker(key, { selected: getId() });
+      if (id === null) return;
+      setId(id || null);
+      paint();
+    }
+  });
+  const paint = () => {
+    const name = entryName(key, getId());
+    fill(btn, h('span', { class: name ? '' : 'muted' }, name || 'не указано'));
+  };
+  paint();
+  return h('label', { class: 'field' }, h('span', {}, label), btn);
+}
+
+/**
+ * Состав: строки добавляются по «+». Пустая строка под единственным материалом
+ * ничего не напоминает — правильного их числа не существует.
+ */
+const MAX_PARTS = 7;
+function compositionGroup(label, list) {
+  const box = h('div', {});
+  function paint() {
+    fill(box,
+      h('div', { class: 'section-title' }, label),
+      list.map((part, i) => h('div', { class: 'row part-row' },
+        h('button', {
+          class: 'btn pick spacer', onclick: async () => {
+            const id = await openListPicker('materials', { selected: part.id });
+            if (!id) return;
+            part.id = id;
+            paint();
+          }
+        }, entryName('materials', part.id) || 'не указан'),
+        h('input', {
+          type: 'number', class: 'pct', min: '1', max: '100', step: '1',
+          inputmode: 'numeric', placeholder: '%', value: part.pct ?? '',
+          oninput: e => {
+            const v = parseInt(e.target.value, 10);
+            part.pct = Number.isFinite(v) ? Math.min(100, Math.max(1, v)) : null;
+          }
+        }),
+        h('button', {
+          class: 'icon-btn', title: 'Убрать',
+          onclick: () => { list.splice(i, 1); paint(); }
+        }, '✕')
+      )),
+      list.length < MAX_PARTS ? h('button', {
+        class: 'btn block btn-add', onclick: async () => {
+          const id = await openListPicker('materials', {});
+          if (!id) return;
+          list.push({ id, pct: null });
+          paint();
+        }
+      }, '+ Материал') : null
+    );
+  }
+  paint();
+  return box;
+}
+
 /* ---------- форма вещи ---------- */
 export function openItemForm(item, isNew = false) {
   return new Promise(res => {
     let resolved = false;
-    const nameInput = h('input', { type: 'text', value: item.name, placeholder: 'Например, белая рубашка' });
+    // правим копии: отмена не должна оставлять следов в вещи
+    const mat = {
+      main: (item.material?.main || []).map(p => ({ ...p })),
+      lining: (item.material?.lining || []).map(p => ({ ...p }))
+    };
+    let brandId = item.brandId || null;
 
     const subSel = h('select', {});
     const catSel = h('select', {
@@ -102,7 +176,7 @@ export function openItemForm(item, isNew = false) {
 
     function fillSubs() {
       const cat = catById(catSel.value);
-      fill(subSel, 
+      fill(subSel,
         h('option', { value: '' }, '— без подкатегории —'),
         ...(cat?.subs || []).map(s => h('option', { value: s.id, selected: s.id === item.subId }, s.name))
       );
@@ -127,21 +201,28 @@ export function openItemForm(item, isNew = false) {
       })
     ));
 
-    const colorsRow = h('div', { class: 'row', style: { gap: '6px', flexWrap: 'wrap' } },
-      (item.colors || []).map(c => h('div', { class: 'row', style: { gap: '4px' } },
-        h('span', { class: 'dot', style: { background: c.hex, width: '18px', height: '18px' } }),
-        h('span', { class: 'small muted' }, `${colorName(c.hex)} ${Math.round(c.ratio * 100)}%`)))
-    );
+    const priceInput = h('input', {
+      type: 'number', min: '0', step: '1', inputmode: 'numeric',
+      placeholder: 'не указана', value: item.price?.value ?? ''
+    });
+    const curInput = h('input', {
+      type: 'text', class: 'cur', maxlength: '4', value: item.price?.cur || lastCurrency()
+    });
+    const noteInput = h('textarea', { rows: '3', placeholder: 'не заполнен' }, item.note || '');
 
     const modal = openModal({
       title: isNew ? 'Новая вещь' : 'Редактировать',
       body: h('div', {},
         preview,
         h('div', { class: 'section-title' }, 'Фон карточки'), bgRow,
-        h('label', { class: 'field' }, h('span', {}, 'Название'), nameInput),
         h('label', { class: 'field' }, h('span', {}, 'Категория'), catSel),
         h('label', { class: 'field' }, h('span', {}, 'Подкатегория'), subSel),
-        h('div', { class: 'section-title' }, 'Цвета вещи'), colorsRow,
+        listField('Производитель', 'brands', () => brandId, v => { brandId = v; }),
+        compositionGroup('Состав', mat.main),
+        compositionGroup('Подкладка', mat.lining),
+        h('label', { class: 'field' }, h('span', {}, 'Цена'),
+          h('div', { class: 'row' }, priceInput, curInput)),
+        h('label', { class: 'field' }, h('span', {}, 'Комментарий'), noteInput),
         h('button', {
           class: 'btn block', style: { marginTop: '14px' }, onclick: async () => {
             const blob = await openImageEditor(item.img, { autoAI: false });
@@ -156,9 +237,20 @@ export function openItemForm(item, isNew = false) {
         h('button', { class: 'btn', onclick: () => modal.close() }, 'Отмена'),
         h('button', {
           class: 'btn primary', onclick: async () => {
-            item.name = nameInput.value.trim() || (item.colors?.[0] ? colorName(item.colors[0].hex) + ' вещь' : 'Без названия');
             item.catId = catSel.value || null;
             item.subId = subSel.value || null;
+            // значение списка могли удалить, пока форма была открыта
+            const alive = (key, id) => (listEntry(key, id) ? id : null);
+            item.brandId = alive('brands', brandId);
+            item.material = {
+              main: mat.main.filter(p => alive('materials', p.id)),
+              lining: mat.lining.filter(p => alive('materials', p.id))
+            };
+            const price = parseFloat(priceInput.value);
+            item.price = Number.isFinite(price)
+              ? { value: price, cur: curInput.value.trim() || lastCurrency() }
+              : null;
+            item.note = noteInput.value.trim();
             await saveItem(item);
             resolved = true;
             modal.close();
@@ -173,42 +265,80 @@ export function openItemForm(item, isNew = false) {
 }
 
 /* ---------- карточка вещи ---------- */
-/* ---------- карточка вещи ---------- */
 /**
- * Карточка — отдельный экран, а не окно: фотография и есть то, ради чего её
- * открывают, а в модальном окне она ужата полями. Возврат — тем же «‹»
- * в верхней панели, что и во всём гардеробе.
+ * Карточка — отдельный экран, а не окно: открывают её ради фотографии,
+ * а в окне фотография ужата полями. Возврат — тем же «‹» в верхней панели,
+ * что и во всём гардеробе.
  */
+// у какой вещи развёрнут нижний блок; при открытии карточки — ни у какой
+let cardOpen = null;
+
 export function openItemCard(item) {
   nav.itemId = item.id;
+  cardOpen = null;
   emit();
 }
 
-const closeCard = () => { nav.itemId = null; emit(); };
+const closeCard = () => { nav.itemId = null; cardOpen = null; emit(); };
+
+/** Подпись вещи: производитель, а если его нет — категория. */
+export const itemLabel = item =>
+  entryName('brands', item.brandId) || catById(item.catId)?.name || 'Вещь';
+
+const composition = parts => (parts || [])
+  .map(p => entryName('materials', p.id) + (p.pct ? ` ${p.pct}%` : ''))
+  .filter(Boolean).join(' · ');
+
+/** Строка подробностей: пустую не прячем — она напоминает, что не заполнена. */
+const detail = (label, value, empty = 'не указано') => h('div', { class: 'detail' },
+  h('span', { class: 'k' }, label),
+  h('span', { class: value ? 'v' : 'v muted' }, value || empty));
 
 function renderItemCard(root, item) {
   const place = [catById(item.catId)?.name, subById(item.catId, item.subId)?.name]
     .filter(Boolean).join(' › ') || 'Без категории';
+  const worn = wearCount(item.id);
+  const open = cardOpen === item.id;
 
   fill(root,
     h('div', { class: 'card-photo', style: { background: bgCss(item.bg) } },
-      h('img', { src: urlFor(item.img), alt: item.name || '' })),
+      h('img', { src: urlFor(item.img), alt: itemLabel(item) })),
 
     h('div', { class: 'lrow' },
       h('div', { class: 't' },
-        h('b', {}, item.name || '—'),
-        h('span', {}, place))),
+        h('b', { class: item.brandId ? '' : 'muted' },
+          entryName('brands', item.brandId) || 'производитель не указан'),
+        h('span', {}, place)),
+      h('span', { class: 'worn' }, worn ? plural(worn, 'надевание', 'надевания', 'надеваний') : 'ещё не надето')
+    ),
 
-    (item.colors || []).length ? h('div', { class: 'section-title' }, 'Цвета') : null,
-    h('div', { class: 'row', style: { gap: '6px', flexWrap: 'wrap' } },
-      (item.colors || []).map(c => h('div', {
-        class: 'chip',
-        onclick: () => {
-          filters.color = c.hex;
-          nav.itemId = null; nav.archive = false; nav.catId = null; nav.subId = null; nav.all = true;
-          emit();
-        }
-      }, h('span', { class: 'dot', style: { background: c.hex } }), colorName(c.hex)))),
+    // цена — цифра, которую не всегда хочется видеть, поэтому блок всегда
+    // открывается свёрнутым и своё состояние не запоминает
+    h('button', {
+      class: 'btn block more' + (open ? ' on' : ''),
+      onclick: () => { cardOpen = open ? null : item.id; emit(); }
+    }, open ? 'Свернуть ⌃' : 'Подробнее ⌄'),
+
+    open ? h('div', { class: 'card-details' },
+      h('div', { class: 'detail' },
+        h('span', { class: 'k' }, 'Цвета'),
+        (item.colorIds || []).length
+          ? h('span', { class: 'v chips' }, (item.colorIds || []).map(id => {
+            const c = listEntry('colors', id);
+            return c ? h('span', {
+              class: 'chip', onclick: () => {
+                filters.color = c.id;
+                nav.itemId = null; nav.archive = false; nav.catId = null; nav.subId = null; nav.all = true;
+                emit();
+              }
+            }, h('span', { class: 'dot', style: { background: c.hex } }), c.name) : null;
+          }))
+          : h('span', { class: 'v muted' }, 'не указаны')),
+      detail('Состав', composition(item.material?.main), 'не указан'),
+      detail('Подкладка', composition(item.material?.lining), 'не указана'),
+      detail('Цена', item.price ? `${item.price.value} ${item.price.cur}` : '', 'не указана'),
+      detail('Комментарий', item.note, 'не заполнен')
+    ) : null,
 
     h('div', { class: 'card-actions' },
       h('button', {
@@ -255,7 +385,7 @@ export function filteredItems() {
   const sorters = {
     new: (a, b) => b.createdAt - a.createdAt,
     old: (a, b) => a.createdAt - b.createdAt,
-    name: (a, b) => (a.name || '').localeCompare(b.name || '', 'ru'),
+    name: (a, b) => entryName('brands', a.brandId).localeCompare(entryName('brands', b.brandId), 'ru'),
     color: (a, b) => hue(a) - hue(b)
   };
   return list.sort(sorters[filters.sort] || sorters.new);
@@ -426,7 +556,7 @@ const latestIn = (catId, subId, arc) => itemsIn(catId, subId, arc)[0] || null;
 export function closetNav() {
   if (nav.itemId) {
     const it = itemById(nav.itemId);
-    if (it) return { title: it.name || 'Вещь', back: closeCard };
+    if (it) return { title: itemLabel(it), back: closeCard };
   }
   if (nav.all) return { title: 'Все вещи', back: goRoot };
   if (nav.archive && !nav.catId) return { title: 'Архив вещей', back: goRoot };
@@ -737,10 +867,10 @@ const itemTile = (it, selectable = false) => {
       emit();
     }
   },
-    h('img', { src: urlFor(it.img), alt: it.name }),
+    h('img', { src: urlFor(it.img), alt: itemLabel(it) }),
     it.fav && !selectable ? h('span', { class: 'fav' }, '★') : null,
     selectable ? h('span', { class: 'check' + (picked ? ' on' : '') }, picked ? '✓' : '') : null,
-    it.name ? h('span', { class: 'lbl' }, it.name) : null
+    it.brandId ? h('span', { class: 'lbl' }, entryName('brands', it.brandId)) : null
   );
 };
 
@@ -810,7 +940,7 @@ function renderAll(root) {
       style: { width: 'auto', padding: '5px 8px', fontSize: '12px' },
       onchange: e => { filters.sort = e.target.value; emit(); }
     },
-      [['new', 'Сначала новые'], ['old', 'Сначала старые'], ['name', 'По названию'], ['color', 'По цвету']]
+      [['new', 'Сначала новые'], ['old', 'Сначала старые'], ['name', 'По производителю'], ['color', 'По цвету']]
         .map(([v, t]) => h('option', { value: v, selected: filters.sort === v }, t)))
   );
 

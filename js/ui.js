@@ -114,7 +114,7 @@ export function actionSheet(title, actions) {
       title,
       body: h('div', { class: 'list' },
         actions.map(a => h('button', {
-          class: 'btn block' + (a.danger ? ' danger' : ''),
+          class: 'btn block' + (a.danger ? ' danger' : '') + (a.muted ? ' quiet' : ''),
           style: { textAlign: 'left', marginBottom: '2px' },
           onclick: () => { done = true; res(a.id); m.close(); }
         }, (a.icon ? a.icon + '  ' : '') + a.label))

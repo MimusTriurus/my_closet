@@ -686,7 +686,7 @@ const thumbOf = item => item
   ? h('img', { class: 'thumb', src: urlFor(item.img), style: { background: bgCss(item.bg) } })
   : h('div', { class: 'thumb ph' });
 
-function navRow({ thumb, thumbNode, title, note, muted, onclick }) {
+export function navRow({ thumb, thumbNode, title, note, muted, onclick }) {
   return h('div', { class: 'lrow nav' + (muted ? ' soft' : ''), onclick },
     thumbNode || thumbOf(thumb),
     h('div', { class: 't' }, h('b', {}, title), note ? h('span', {}, note) : null),
@@ -698,7 +698,7 @@ function navRow({ thumb, thumbNode, title, note, muted, onclick }) {
  * Миниатюра «Всех вещей» — мозаика из четырёх последних добавленных.
  * Одна фотография повторяла бы картинку соседней строки.
  */
-function collageThumb(items) {
+export function collageThumb(items) {
   const four = items.slice(0, 4);
   if (!four.length) return h('div', { class: 'thumb ph' });
   return h('div', { class: 'thumb grid4' },

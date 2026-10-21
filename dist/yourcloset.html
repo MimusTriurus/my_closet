@@ -209,6 +209,20 @@ main#views{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scro
 .chips.filters{padding:6px 0 2px;flex-wrap:wrap;overflow:visible}
 .chips.filters .chip{white-space:nowrap}
 .chip .x{margin-left:4px;opacity:.7;font-size:11px}
+
+/* образы: вещь, ушедшая в архив, видна и в карточке, и на плитке */
+.card-photo.tall{aspect-ratio:3/4}
+.warn-line{
+  margin:8px 0 0;padding:9px 11px;border-radius:var(--r-sm);
+  background:var(--surface-2);color:var(--muted);font-size:12.5px;line-height:1.45;
+}
+.tile.gone img{opacity:.45;filter:grayscale(.7)}
+.tile .gone-mark{
+  position:absolute;top:5px;left:5px;width:18px;height:18px;border-radius:50%;
+  background:rgba(255,255,255,.92);display:flex;align-items:center;justify-content:center;
+  font-size:11px;color:var(--muted);box-shadow:0 1px 3px rgba(0,0,0,.15)
+}
+.tile.has-gone{outline:1px dashed var(--muted);outline-offset:-1px}
 input[type=color].hex{width:100%;height:42px;padding:2px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--surface)}
 .row .cur{width:58px;flex:0 0 auto;text-align:center}
 
@@ -618,6 +632,7 @@ const plural = (n, one, few, many) => {
   return n + ' ' + (a > 10 && a < 20 ? many : b === 1 ? one : b >= 2 && b <= 4 ? few : many);
 };
 const nItems = n => plural(n, 'вещь', 'вещи', 'вещей');
+const nOutfits = n => plural(n, 'образ', 'образа', 'образов');
 
 const fmtDate = d => {
   const dt = typeof d === 'string' ? new Date(d + 'T00:00:00') : d;
@@ -2778,25 +2793,36 @@ function renderCloset(root) {
 }
 
 /* ===== outfits.js ===== */
-// Вкладка «Образы»: коллекции (Style Book), редактор образа на Konva, рандомайзер.
+// Вкладка «Образы»: папки с категориями, редактор образа на Konva, рандомайзер.
+import {
+  fill, h, qs, urlFor, toast, openModal, confirmDialog, promptDialog, actionSheet, busy,
+  plural, nItems, nOutfits
+} from './ui.js';
+import {
+  state, saveOutfit, deleteOutfit, outfitById, itemById, visibleItems, emit,
+  catById, subById, outfitCats, countInOutfitCat, SCOPE_OUTFIT
+} from './state.js';
 
 const SW = 640, SH = 860;           // логический размер холста образа
-const outfitFilter = { collectionId: null };
 
 const dataURLtoBlob = url => fetch(url).then(r => r.blob());
 
 /* ---------- редактор образа ---------- */
-async function openOutfitEditor(existing) {
+async function openOutfitEditor(existing, isCopy = false) {
   const outfit = existing
     ? JSON.parse(JSON.stringify({ ...existing, preview: null }))
-    : { id: uid('of'), name: '', collectionId: outfitFilter.collectionId, bg: 'cream', layers: [], createdAt: Date.now() };
+    : {
+      id: uid('of'), name: '', bg: 'cream', layers: [], createdAt: Date.now(),
+      // образ ложится в ту папку, из которой его начали собирать
+      catId: nav.catId === OTHER ? null : nav.catId, subId: nav.subId === OTHER ? null : nav.subId
+    };
 
   const host = h('div', { id: 'stage-host' });
   const toolbar = h('div', { class: 'tools' });
   const opts = h('div', { class: 'tool-opts' });
 
   const modal = openModal({
-    title: existing ? 'Редактировать образ' : 'Новый образ',
+    title: !existing || isCopy ? 'Новый образ' : 'Редактировать образ',
     full: true,
     body: h('div', { style: { display: 'flex', flexDirection: 'column', height: '100%', margin: '-12px' } }, host, opts, toolbar),
     foot: [
@@ -2959,94 +2985,288 @@ async function openOutfitEditor(existing) {
   }
 }
 
-/* ---------- карточка образа ---------- */
-function openOutfitCard(o) {
-  const modal = openModal({
-    title: o.name || 'Образ',
-    body: h('div', {},
-      h('div', { class: 'tile', style: { aspectRatio: '3/4', background: bgCss(o.bg) } }, h('img', { src: urlFor(o.preview) })),
-      h('div', { class: 'section-title' }, 'Вещи в образе'),
-      h('div', { class: 'grid' }, o.layers.map(l => {
-        const it = itemById(l.itemId);
-        return it ? h('div', { class: 'tile', style: { background: bgCss(it.bg) } }, h('img', { src: urlFor(it.img) })) : null;
-      }))
-    ),
-    foot: [
-      h('button', {
-        class: 'btn', onclick: async () => {
-          const cid = await pickCollection();
-          if (cid !== undefined) { o.collectionId = cid; await saveOutfit(o); toast('Перемещено'); modal.close(); }
-        }
-      }, '📚 В коллекцию'),
-      h('button', { class: 'btn', onclick: () => { modal.close(); openOutfitEditor(o); } }, '✎ Изменить'),
-      h('button', {
-        class: 'btn danger', onclick: async () => {
-          if (await confirmDialog('Удалить образ?')) { await deleteOutfit(o.id); modal.close(); }
-        }
-      }, '🗑')
-    ]
-  });
+/* ---------- пространство категорий образов ---------- */
+/**
+ * Третье пространство категорий — своё, отдельное и от гардеробных,
+ * и от архивных. Механизм общий, отличаются только списки и счётчики.
+ */
+const outfitSpace = {
+  scope: SCOPE_OUTFIT,
+  title: 'Категории образов',
+  cats: () => outfitCats(),
+  n: nOutfits,
+  thumb: c => previewOf(latestOutfit(c.id, null)),
+  countSub: (cat, subId) => state.outfits.filter(o => o.subId === subId).length,
+  detachSub: async subId => {
+    for (const o of state.outfits.filter(x => x.subId === subId)) {
+      o.subId = null;
+      await saveOutfit(o);
+    }
+  },
+  moveHint: 'Перенесите их в другую категорию — после этого её можно будет удалить.'
+};
+
+/* ---------- навигация по папкам ---------- */
+/**
+ * Устроено как «Гардероб»: список категорий → подкатегории → образы.
+ * «Другое» появляется само, когда в категории есть образы без подкатегории.
+ */
+const nav = { all: false, catId: null, subId: null, outfitId: null };
+
+const goRoot = () => { nav.all = false; nav.catId = null; nav.subId = null; nav.outfitId = null; emit(); };
+const openCat = id => { nav.catId = id; nav.subId = null; emit(); };
+const catOf = id => outfitCats().find(c => c.id === id) || null;
+
+/** Образы раздела. Ссылка на удалённую подкатегорию считается отсутствующей. */
+function outfitsIn(catId, subId) {
+  const want = catId === OTHER ? null : catId;
+  const subs = new Set((catOf(want)?.subs || []).map(s => s.id));
+  const subOf = o => (subs.has(o.subId) ? o.subId : null);
+  return state.outfits
+    .filter(o => (o.catId || null) === want
+      && (subId == null || (subId === OTHER ? !subOf(o) : subOf(o) === subId)))
+    .sort((a, b) => b.createdAt - a.createdAt);
+}
+const latestOutfit = (catId, subId) => outfitsIn(catId, subId)[0] || null;
+
+function outfitsNav() {
+  if (nav.outfitId) {
+    const o = outfitById(nav.outfitId);
+    if (o) return { title: o.name || 'Образ', back: closeCard };
+  }
+  if (nav.all) return { title: 'Все образы', back: goRoot };
+  // «Другое» — не настоящая категория, своего заголовка у неё иначе не будет
+  if (nav.catId === OTHER) return { title: 'Другое', back: goRoot };
+  const cat = catOf(nav.catId);
+  if (!cat) return null;
+  if (!nav.subId) {
+    return {
+      title: cat.name, back: goRoot,
+      action: { icon: '📂', title: 'Подкатегории', onclick: () => openSubManager(outfitSpace, cat, emit) }
+    };
+  }
+  const name = nav.subId === OTHER ? 'Другое' : cat.subs.find(s => s.id === nav.subId)?.name;
+  return { title: name || cat.name, back: () => { nav.subId = null; emit(); } };
 }
 
-function pickCollection() {
+/* ---------- карточка образа ---------- */
+const closeCard = () => { nav.outfitId = null; emit(); };
+
+/** Вещи образа, которых уже нет в гардеробе, в нём остаются — но помечаются. */
+const outfitItems = o => (o.layers || []).map(l => itemById(l.itemId)).filter(Boolean);
+const archivedInOutfit = o => outfitItems(o).filter(i => i.archived);
+
+const previewOf = o => o
+  ? h('img', { class: 'thumb', src: urlFor(o.preview), style: { background: bgCss(o.bg) } })
+  : h('div', { class: 'thumb ph' });
+
+function renderOutfitCard(root, o) {
+  const items = outfitItems(o);
+  const gone = archivedInOutfit(o);
+  const cat = catById(o.catId);
+  const place = [cat?.name, subById(o.catId, o.subId)?.name].filter(Boolean).join(' › ') || 'Без категории';
+
+  fill(root,
+    h('div', { class: 'card-photo tall', style: { background: bgCss(o.bg) } },
+      h('img', { src: urlFor(o.preview), alt: o.name || 'Образ' })),
+
+    h('div', { class: 'lrow' },
+      h('div', { class: 't' }, h('b', {}, o.name || 'Образ'), h('span', {}, place))),
+
+    // вещь, ушедшая в архив, образ не портит — но знать об этом нужно до того,
+    // как образ попадёт в календарь и добавит ей носку, которой не было
+    gone.length ? h('p', { class: 'warn-line' },
+      `${nItems(gone.length)} из этого образа ${gone.length === 1 ? 'в архиве' : 'в архиве'}: `
+      + gone.map(itemLabel).join(', ')) : null,
+
+    h('div', { class: 'section-title' }, 'Вещи в образе'),
+    items.length ? h('div', { class: 'grid' }, items.map(it => h('div', {
+      class: 'tile' + (it.archived ? ' gone' : ''), style: { background: bgCss(it.bg) },
+      onclick: () => { closeCard(); openItemCard(it); }
+    }, h('img', { src: urlFor(it.img) }))))
+      : h('p', { class: 'muted small' }, 'Вещей из гардероба в образе не осталось.'),
+
+    h('div', { class: 'card-actions' },
+      h('button', {
+        class: 'btn', onclick: async () => {
+          const dest = await pickOutfitPlace();
+          if (!dest) return;
+          o.catId = dest.catId; o.subId = dest.subId;
+          await saveOutfit(o);
+          toast('Перемещено');
+        }
+      }, '📂 В категорию'),
+      h('button', { class: 'btn', onclick: () => copyOutfit(o) }, '⧉ Копия'),
+      h('button', { class: 'btn', onclick: () => openOutfitEditor(o) }, '✎ Изменить'),
+      h('button', { class: 'btn danger', onclick: () => removeOutfit(o) }, '🗑')
+    )
+  );
+  root.style.paddingBottom = '';
+}
+
+/* ---------- копия и удаление ---------- */
+/**
+ * Копия — не удобство, а необходимость: вариант с другой обувью это
+ * отдельный образ, и собирать его с нуля никто не станет. Копия сразу
+ * открывается в редакторе и сама не сохраняется.
+ */
+function copyOutfit(o, drop = []) {
+  const copy = {
+    ...JSON.parse(JSON.stringify({ ...o, preview: null })),
+    id: uid('of'),
+    name: o.name ? o.name + ' — копия' : '',
+    createdAt: Date.now()
+  };
+  if (drop.length) copy.layers = copy.layers.filter(l => !drop.includes(l.itemId));
+  nav.outfitId = null;
+  return openOutfitEditor(copy, true);
+}
+
+async function removeOutfit(o) {
+  const days = state.calendar.filter(d => (d.outfitIds || []).includes(o.id)).length;
+  const text = days
+    ? `Образ использован в ${plural(days, 'дне', 'днях', 'днях')} календаря. Удалить вместе с записями?`
+    : 'Удалить образ?';
+  if (!await confirmDialog(text)) return;
+  closeCard();
+  await deleteOutfit(o.id);
+  toast(days ? 'Образ и записи удалены' : 'Образ удалён');
+}
+
+/** Куда положить образ: категория и подкатегория, обе необязательны. */
+function pickOutfitPlace() {
   return new Promise(res => {
     let done = false;
-    const modal = openModal({
-      title: 'Коллекция',
-      body: h('div', { class: 'list' },
-        h('button', { class: 'btn block', onclick: () => { done = true; modal.close(); res(null); } }, 'Без коллекции'),
-        ...state.collections.map(c => h('button', {
-          class: 'btn block', onclick: () => { done = true; modal.close(); res(c.id); }
-        }, c.name)),
-        h('button', {
-          class: 'btn block primary', onclick: async () => {
-            const n = await promptDialog('Новая коллекция');
-            if (!n) return;
-            const c = await saveCollection({ id: uid('col'), name: n, createdAt: Date.now() });
-            done = true; modal.close(); res(c.id);
-          }
-        }, '+ Новая коллекция')),
-      onClose: () => { if (!done) res(undefined); }
-    });
+    const body = h('div', { class: 'list' });
+    const modal = openModal({ title: 'Куда положить', body, onClose: () => { if (!done) res(null); } });
+    const finish = v => { done = true; res(v); modal.close(); };
+
+    function render(cat) {
+      if (!cat) {
+        return fill(body,
+          ...outfitCats().map(c => h('div', {
+            class: 'lrow nav', onclick: () => c.subs.length ? render(c) : finish({ catId: c.id, subId: null })
+          }, h('div', { class: 't' }, h('b', {}, c.name)), h('span', { class: 'chev' }, '›'))),
+          h('div', {
+            class: 'lrow nav soft', onclick: () => finish({ catId: null, subId: null })
+          }, h('div', { class: 't' }, h('b', {}, 'Без категории'))),
+          outfitCats().length ? null : h('p', { class: 'muted small' }, 'Категорий ещё нет.')
+        );
+      }
+      fill(body,
+        h('div', {
+          class: 'lrow nav', onclick: () => finish({ catId: cat.id, subId: null })
+        }, h('div', { class: 't' }, h('b', {}, cat.name), h('span', {}, 'без подкатегории'))),
+        ...cat.subs.map(s => h('div', {
+          class: 'lrow nav', onclick: () => finish({ catId: cat.id, subId: s.id })
+        }, h('div', { class: 't' }, h('b', {}, s.name))))
+      );
+    }
+    render(null);
   });
 }
 
 /* ---------- рендер вкладки ---------- */
-function renderOutfits(root) {
-  const chips = h('div', { class: 'chips' },
-    h('button', {
-      class: 'chip' + (!outfitFilter.collectionId ? ' active' : ''),
-      onclick: () => { outfitFilter.collectionId = null; emit(); }
-    }, 'Все', h('span', { class: 'cnt' }, state.outfits.length)),
-    ...state.collections.map(c => h('button', {
-      class: 'chip' + (outfitFilter.collectionId === c.id ? ' active' : ''),
-      onclick: () => { outfitFilter.collectionId = c.id; emit(); },
-      oncontextmenu: async e => {
-        e.preventDefault();
-        if (await confirmDialog(`Удалить коллекцию «${c.name}»?`)) { await deleteCollection(c.id); }
-      }
-    }, `📚 ${c.name}`, h('span', { class: 'cnt' }, state.outfits.filter(o => o.collectionId === c.id).length))),
-    h('button', {
-      class: 'chip', onclick: async () => {
-        const n = await promptDialog('Новая коллекция');
-        if (n) await saveCollection({ id: uid('col'), name: n, createdAt: Date.now() });
-      }
-    }, '+')
+const outfitTile = o => {
+  const gone = archivedInOutfit(o).length;
+  return h('div', {
+    class: 'tile' + (gone ? ' has-gone' : ''), style: { background: bgCss(o.bg) },
+    onclick: () => { nav.outfitId = o.id; emit(); }
+  },
+    h('img', { src: urlFor(o.preview) }),
+    gone ? h('span', { class: 'gone-mark', title: 'В образе есть вещь из архива' }, '◷') : null,
+    h('span', { class: 'lbl' }, o.name || 'Образ')
   );
+};
 
-  const list = state.outfits.filter(o => !outfitFilter.collectionId || o.collectionId === outfitFilter.collectionId);
+function outfitGrid(root, list, emptyText) {
+  fill(root,
+    h('div', { class: 'row', style: { margin: '2px 0 8px' } },
+      h('span', { class: 'small muted spacer' }, nOutfits(list.length))),
+    list.length ? h('div', { class: 'grid g2' }, list.map(outfitTile)) : h('div', { class: 'empty' },
+      h('div', { class: 'big' }, '👗'),
+      h('p', {}, emptyText)),
+    h('button', { class: 'fab', onclick: () => openOutfitEditor(null), title: 'Собрать образ' }, '+')
+  );
+  root.style.paddingBottom = '';
+}
 
-  const grid = list.length ? h('div', { class: 'grid g2' },
-    list.map(o => h('div', {
-      class: 'tile', style: { background: bgCss(o.bg) }, onclick: () => openOutfitCard(o)
-    }, h('img', { src: urlFor(o.preview) }), h('span', { class: 'lbl' }, o.name || 'Образ')))
-  ) : h('div', { class: 'empty' },
-    h('div', { class: 'big' }, '👗'),
-    h('p', {}, 'Образов пока нет'),
-    h('button', { class: 'btn primary', onclick: () => openOutfitEditor(null) }, 'Собрать образ'));
+function renderOutfitRoot(root) {
+  const cats = outfitCats().sort((a, b) => a.order - b.order);
+  const loose = outfitsIn(OTHER, null).length;
 
-  fill(root, chips, grid,
-    h('button', { class: 'fab', onclick: () => openOutfitEditor(null) }, '+'));
+  fill(root,
+    h('div', { class: 'list' },
+      navRow({
+        thumbNode: collageThumb(state.outfits), title: 'Все образы',
+        note: nOutfits(state.outfits.length),
+        onclick: () => { nav.all = true; emit(); }
+      }),
+      ...cats.map(c => navRow({
+        thumbNode: previewOf(latestOutfit(c.id, null)), title: c.name,
+        note: nOutfits(countInOutfitCat(c.id))
+          + (c.subs.length ? ' · ' + plural(c.subs.length, 'подкатегория', 'подкатегории', 'подкатегорий') : ''),
+        onclick: () => openCat(c.id)
+      })),
+      loose ? navRow({
+        thumbNode: previewOf(latestOutfit(OTHER, null)), title: 'Другое', muted: true,
+        note: nOutfits(loose) + ' без категории',
+        onclick: () => openCat(OTHER)
+      }) : null
+    ),
+    h('button', {
+      class: 'btn block ghost', style: { marginTop: '14px' },
+      onclick: () => openCategoryManager(outfitSpace)
+    }, '⚙️ Категории образов'),
+    h('button', { class: 'fab', onclick: () => openOutfitEditor(null), title: 'Собрать образ' }, '+')
+  );
+  root.style.paddingBottom = '';
+}
+
+function renderCat(root, cat) {
+  const loose = outfitsIn(cat.id, OTHER).length;
+  fill(root,
+    h('div', { class: 'list' },
+      ...cat.subs.map(s => navRow({
+        thumbNode: previewOf(latestOutfit(cat.id, s.id)), title: s.name,
+        note: nOutfits(outfitsIn(cat.id, s.id).length),
+        onclick: () => { nav.subId = s.id; emit(); }
+      })),
+      loose ? navRow({
+        thumbNode: previewOf(latestOutfit(cat.id, OTHER)), title: 'Другое', muted: true,
+        note: nOutfits(loose) + ' без подкатегории',
+        onclick: () => { nav.subId = OTHER; emit(); }
+      }) : null
+    ),
+    h('button', { class: 'fab', onclick: () => openOutfitEditor(null), title: 'Собрать образ' }, '+')
+  );
+  root.style.paddingBottom = '';
+}
+
+function renderOutfits(root) {
+  if (nav.outfitId) {
+    const o = outfitById(nav.outfitId);
+    if (o) return renderOutfitCard(root, o);
+    nav.outfitId = null;
+  }
+  if (nav.all) return outfitGrid(root, state.outfits, 'Образов пока нет. Нажмите «+» внизу справа.');
+
+  if (nav.catId === OTHER) {
+    const loose = outfitsIn(OTHER, null);
+    if (!loose.length) { nav.catId = null; return renderOutfitRoot(root); }
+    return outfitGrid(root, loose, 'Здесь пусто.');
+  }
+  const cat = catOf(nav.catId);
+  if (!cat) { nav.catId = null; nav.subId = null; return renderOutfitRoot(root); }
+
+  if (!nav.subId) {
+    return cat.subs.length
+      ? renderCat(root, cat)
+      : outfitGrid(root, outfitsIn(cat.id), `В категории «${cat.name}» пока пусто.`);
+  }
+  const list = outfitsIn(cat.id, nav.subId);
+  if (nav.subId === OTHER && !list.length) { nav.subId = null; return renderCat(root, cat); }
+  outfitGrid(root, list, 'Здесь пусто.');
 }
 
 /* ===== calendar.js ===== */
@@ -3447,7 +3667,7 @@ function openSettings() {
 
 const TABS = {
   closet: { title: 'Гардероб', render: renderCloset, nav: closetNav },
-  outfits: { title: 'Образы', render: renderOutfits },
+  outfits: { title: 'Образы', render: renderOutfits, nav: outfitsNav },
   calendar: { title: 'Календарь', render: renderCalendar },
   packing: { title: 'Чемодан', render: renderPacking }
 };
@@ -3470,9 +3690,6 @@ function renderTopbar() {
       ? h('button', {
         class: 'icon-btn', title: inner.action.title, onclick: inner.action.onclick
       }, inner.action.icon)
-      : null,
-    current === 'outfits'
-      ? h('button', { class: 'icon-btn', title: 'Новый образ', onclick: () => openOutfitEditor(null) }, '🎨')
       : null,
     h('button', { class: 'icon-btn', title: 'Настройки', onclick: openSettings }, '⚙️')
   );

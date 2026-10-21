@@ -142,6 +142,7 @@ export const plural = (n, one, few, many) => {
   return n + ' ' + (a > 10 && a < 20 ? many : b === 1 ? one : b >= 2 && b <= 4 ? few : many);
 };
 export const nItems = n => plural(n, 'вещь', 'вещи', 'вещей');
+export const nOutfits = n => plural(n, 'образ', 'образа', 'образов');
 
 export const fmtDate = d => {
   const dt = typeof d === 'string' ? new Date(d + 'T00:00:00') : d;

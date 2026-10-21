@@ -2,14 +2,14 @@
 import { fill, qs, qsa, h, toast } from './ui.js';
 import { loadAll, subscribe, notices } from './state.js';
 import { renderCloset, closetNav, startAddItem } from './closet.js';
-import { renderOutfits, openOutfitEditor } from './outfits.js';
+import { renderOutfits, outfitsNav } from './outfits.js';
 import { renderCalendar } from './calendar.js';
 import { renderPacking } from './packing.js';
 import { openSettings } from './settings.js';
 
 const TABS = {
   closet: { title: 'Гардероб', render: renderCloset, nav: closetNav },
-  outfits: { title: 'Образы', render: renderOutfits },
+  outfits: { title: 'Образы', render: renderOutfits, nav: outfitsNav },
   calendar: { title: 'Календарь', render: renderCalendar },
   packing: { title: 'Чемодан', render: renderPacking }
 };
@@ -32,9 +32,6 @@ function renderTopbar() {
       ? h('button', {
         class: 'icon-btn', title: inner.action.title, onclick: inner.action.onclick
       }, inner.action.icon)
-      : null,
-    current === 'outfits'
-      ? h('button', { class: 'icon-btn', title: 'Новый образ', onclick: () => openOutfitEditor(null) }, '🎨')
       : null,
     h('button', { class: 'icon-btn', title: 'Настройки', onclick: openSettings }, '⚙️')
   );

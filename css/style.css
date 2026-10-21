@@ -167,6 +167,20 @@ main#views{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scro
 .chips.filters{padding:6px 0 2px;flex-wrap:wrap;overflow:visible}
 .chips.filters .chip{white-space:nowrap}
 .chip .x{margin-left:4px;opacity:.7;font-size:11px}
+
+/* образы: вещь, ушедшая в архив, видна и в карточке, и на плитке */
+.card-photo.tall{aspect-ratio:3/4}
+.warn-line{
+  margin:8px 0 0;padding:9px 11px;border-radius:var(--r-sm);
+  background:var(--surface-2);color:var(--muted);font-size:12.5px;line-height:1.45;
+}
+.tile.gone img{opacity:.45;filter:grayscale(.7)}
+.tile .gone-mark{
+  position:absolute;top:5px;left:5px;width:18px;height:18px;border-radius:50%;
+  background:rgba(255,255,255,.92);display:flex;align-items:center;justify-content:center;
+  font-size:11px;color:var(--muted);box-shadow:0 1px 3px rgba(0,0,0,.15)
+}
+.tile.has-gone{outline:1px dashed var(--muted);outline-offset:-1px}
 input[type=color].hex{width:100%;height:42px;padding:2px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--surface)}
 .row .cur{width:58px;flex:0 0 auto;text-align:center}
 

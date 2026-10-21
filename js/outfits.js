@@ -191,15 +191,23 @@ export async function openOutfitEditor(existing, isCopy = false) {
       scaleX: n.scaleX(), scaleY: n.scaleY(), rotation: n.rotation()
     }));
     tr.nodes([]); layer.batchDraw();
+
+    // Названия здесь не спрашиваем. Оно необязательно и правится в карточке,
+    // а запрос показывался из-под «занято»: окно было видно, но недоступно —
+    // приложение выглядело зависшим.
     busy(true, 'Сохраняю образ…');
-    const url = stage.toDataURL({ pixelRatio: 1 / viewScale });
-    outfit.preview = await dataURLtoBlob(url);
-    if (!outfit.name) {
-      outfit.name = await promptDialog('Название образа', '', 'Например, «Офис, вторник»') || 'Образ';
+    try {
+      const url = stage.toDataURL({ pixelRatio: 1 / viewScale });
+      outfit.preview = await dataURLtoBlob(url);
+      await saveOutfit(outfit);
+      saved = outfit;
+    } catch (e) {
+      console.error(e);
+      toast('Не удалось сохранить образ');
+      return;
+    } finally {
+      busy(false);          // что бы ни случилось, экран не остаётся занятым
     }
-    await saveOutfit(outfit);
-    saved = outfit;
-    busy(false);
     window.removeEventListener('resize', onResize);
     modal.close();
     toast('Образ сохранён');

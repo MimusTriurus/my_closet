@@ -1,7 +1,10 @@
-// Вкладка «Календарь»: планирование образов и отдельных вещей по дням.
-import { fill, h, urlFor, openModal, toast, iso, fmtDate } from './ui.js';
+// Вкладка «Календарь»: какой образ надет в какой день. Только образы —
+// отдельные вещи сюда не кладутся, иначе у счётчика носок два источника.
+import {
+  fill, h, urlFor, openModal, actionSheet, confirmDialog, iso, fmtDate, pluralWord
+} from './ui.js';
 import { state, saveDay, dayByDate, outfitById, itemById, archivedInOutfit, emit } from './state.js';
-import { pickItems, pickOutfits } from './picker.js';
+import { pickOutfits } from './picker.js';
 import { askArchivedInDay, copyOutfit } from './outfits.js';
 import { bgCss } from './bgs.js';
 
@@ -35,37 +38,66 @@ async function vetOutfits(dateStr, ids, before) {
 function openDay(dateStr) {
   const day = dayByDate(dateStr) || { id: dateStr, outfitIds: [], itemIds: [] };
   const body = h('div', {});
-  const modal = openModal({ title: fmtDate(dateStr), body, full: true });
+  openModal({ title: fmtDate(dateStr), body, full: true });
+
+  async function dropOutfit(id) {
+    day.outfitIds = (day.outfitIds || []).filter(x => x !== id);
+    await saveDay(day);
+    render();
+  }
 
   function render() {
     const outfits = (day.outfitIds || []).map(outfitById).filter(Boolean);
-    const items = (day.itemIds || []).map(itemById).filter(Boolean);
-    fill(body, 
-      h('div', { class: 'row', style: { gap: '8px', marginBottom: '10px' } },
-        h('button', {
-          class: 'btn primary', style: { flex: '1' }, onclick: async () => {
-            const ids = await pickOutfits({ selected: day.outfitIds, title: 'Образы на день' });
-            if (!ids) return;
-            day.outfitIds = await vetOutfits(dateStr, ids, day.outfitIds || []);
-            await saveDay(day);
-            render();
+    // отдельные вещи в календарь больше не кладутся — только образы, иначе
+    // у счётчика носок два источника. Но то, что уже записано, не прячем
+    const legacy = (day.itemIds || []).map(itemById).filter(Boolean);
+
+    fill(body,
+      h('button', {
+        class: 'btn primary block', onclick: async () => {
+          const ids = await pickOutfits({ selected: day.outfitIds, title: 'Образы на день' });
+          if (!ids) return;
+          day.outfitIds = await vetOutfits(dateStr, ids, day.outfitIds || []);
+          await saveDay(day);
+          render();
+        }
+      }, '👗 Выбрать образы'),
+
+      outfits.length ? h('div', { class: 'section-title' }, 'Надето') : null,
+      outfits.length ? h('div', { class: 'grid g2' }, outfits.map(o => {
+        const gone = archivedInOutfit(o).length;
+        return h('div', {
+          class: 'tile' + (gone ? ' has-gone' : ''), style: { background: bgCss(o.bg) },
+          onclick: async () => {
+            const act = await actionSheet(o.name || 'Образ', [
+              { id: 'drop', icon: '✕', label: 'Убрать с этого дня' }
+            ]);
+            if (act === 'drop') dropOutfit(o.id);
           }
-        }, '👗 Образы'),
-        h('button', {
-          class: 'btn', style: { flex: '1' }, onclick: async () => {
-            const ids = await pickItems({ selected: day.itemIds, title: 'Вещи на день' });
-            if (ids) { day.itemIds = ids; await saveDay(day); render(); }
-          }
-        }, '🧺 Вещи')
-      ),
-      outfits.length ? h('div', { class: 'section-title' }, 'Образы') : null,
-      outfits.length ? h('div', { class: 'grid g2' }, outfits.map(o =>
-        h('div', { class: 'tile', style: { background: bgCss(o.bg) } },
-          h('img', { src: urlFor(o.preview) }), h('span', { class: 'lbl' }, o.name)))) : null,
-      items.length ? h('div', { class: 'section-title' }, 'Вещи') : null,
-      items.length ? h('div', { class: 'grid' }, items.map(it =>
-        h('div', { class: 'tile', style: { background: bgCss(it.bg) } }, h('img', { src: urlFor(it.img) })))) : null,
-      (!outfits.length && !items.length) ? h('div', { class: 'empty' }, 'На этот день ничего не запланировано') : null
+        },
+          h('img', { src: urlFor(o.preview) }),
+          gone ? h('span', { class: 'gone-mark', title: 'В образе есть вещь из архива' }, '◷') : null,
+          h('span', { class: 'lbl' }, o.name || 'Образ'));
+      })) : null,
+
+      legacy.length ? h('div', { class: 'section-title' }, 'Вещи из старых записей') : null,
+      legacy.length ? h('p', { class: 'muted small', style: { margin: '0 0 8px' } },
+        'Отдельные вещи в календарь больше не добавляются — только образы.') : null,
+      legacy.length ? h('div', { class: 'grid' }, legacy.map(it => h('div', {
+        class: 'tile', style: { background: bgCss(it.bg) },
+        onclick: async () => {
+          if (!await confirmDialog('Убрать вещь с этого дня?', 'Убрать')) return;
+          day.itemIds = (day.itemIds || []).filter(x => x !== it.id);
+          await saveDay(day);
+          render();
+        }
+      }, h('img', { src: urlFor(it.img) })))) : null,
+
+      (!outfits.length && !legacy.length)
+        ? h('div', { class: 'empty' },
+          h('div', { class: 'big' }, '📅'),
+          h('p', {}, 'На этот день ничего не отмечено.'))
+        : null
     );
   }
   render();
@@ -99,8 +131,17 @@ export function renderCalendar(root) {
     ));
   }
 
-  const monthPlanned = state.calendar.filter(d =>
-    d.id.startsWith(`${y}-${String(m + 1).padStart(2, '0')}`) && ((d.outfitIds?.length || 0) + (d.itemIds?.length || 0))).length;
+  const prefix = `${y}-${String(m + 1).padStart(2, '0')}`;
+  const monthDays = state.calendar.filter(d =>
+    d.id.startsWith(prefix) && ((d.outfitIds?.length || 0) + (d.itemIds?.length || 0)));
+  // носка — это день, а не образ: два образа на дне дают вещи одну носку
+  const monthWears = monthDays.reduce((sum, d) => {
+    const ids = new Set(d.itemIds || []);
+    for (const oid of d.outfitIds || []) {
+      for (const l of outfitById(oid)?.layers || []) ids.add(l.itemId);
+    }
+    return sum + [...ids].filter(itemById).length;
+  }, 0);
 
   fill(root, 
     h('div', { class: 'row', style: { marginBottom: '10px' } },
@@ -109,8 +150,10 @@ export function renderCalendar(root) {
       h('button', { class: 'btn btn-sm', onclick: () => { cursor = new Date(y, m + 1, 1); emit(); } }, '›')
     ),
     h('div', { class: 'stat-row' },
-      h('div', { class: 'stat' }, h('b', {}, monthPlanned), h('span', {}, 'дней распланировано')),
-      h('div', { class: 'stat' }, h('b', {}, state.outfits.length), h('span', {}, 'образов в базе'))
+      h('div', { class: 'stat' }, h('b', {}, monthDays.length),
+        h('span', {}, pluralWord(monthDays.length, 'день отмечен', 'дня отмечено', 'дней отмечено'))),
+      h('div', { class: 'stat' }, h('b', {}, monthWears),
+        h('span', {}, pluralWord(monthWears, 'надевание за месяц', 'надевания за месяц', 'надеваний за месяц')))
     ),
     h('div', { class: 'cal-head' }, WD.map(d => h('div', {}, d))),
     h('div', { class: 'cal-grid' }, cells),

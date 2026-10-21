@@ -1,6 +1,6 @@
 // Настройки: резервная копия — экспорт и импорт всего гардероба одним JSON.
 // В приложении это Google Drive; в прототипе — обычный файл, логика та же.
-import { fill, h, openModal, toast, busy } from './ui.js';
+import { fill, h, openModal, toast, busy, pluralWord } from './ui.js';
 import { dbAll, dbPut, dbClear, STORES } from './db.js';
 import { state, loadAll, emit, closetCount, countInSystem, archivedItems } from './state.js';
 
@@ -70,9 +70,12 @@ export function openSettings() {
       // в гардероб не входят служебные категории: «Сортировка» ещё не разобрана,
       // а «На рассмотрении» — то, что пока не куплено
       h('div', { class: 'stat-row' },
-        h('div', { class: 'stat' }, h('b', {}, closetCount()), h('span', {}, 'вещей')),
-        h('div', { class: 'stat' }, h('b', {}, state.outfits.length), h('span', {}, 'образов')),
-        h('div', { class: 'stat' }, h('b', {}, state.trips.length), h('span', {}, 'поездок'))),
+        h('div', { class: 'stat' }, h('b', {}, closetCount()),
+          h('span', {}, pluralWord(closetCount(), 'вещь', 'вещи', 'вещей'))),
+        h('div', { class: 'stat' }, h('b', {}, state.outfits.length),
+          h('span', {}, pluralWord(state.outfits.length, 'образ', 'образа', 'образов'))),
+        h('div', { class: 'stat' }, h('b', {}, state.trips.length),
+          h('span', {}, pluralWord(state.trips.length, 'поездка', 'поездки', 'поездок')))),
       h('p', { class: 'muted small center', style: { margin: '8px 0 0' } },
         `на рассмотрении ${countInSystem('review')} · не разобрано ${countInSystem('sorting')} · в архиве ${archivedItems().length}`),
       h('div', { class: 'section-title' }, 'Резервная копия'),

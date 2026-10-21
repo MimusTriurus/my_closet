@@ -150,6 +150,9 @@ export const plural = (n, one, few, many) => {
 };
 export const nItems = n => plural(n, 'вещь', 'вещи', 'вещей');
 export const nOutfits = n => plural(n, 'образ', 'образа', 'образов');
+/** Только слово, без числа — для подписей под крупной цифрой. */
+export const pluralWord = (n, one, few, many) =>
+  plural(n, one, few, many).split(' ').slice(1).join(' ');
 
 export const fmtDate = d => {
   const dt = typeof d === 'string' ? new Date(d + 'T00:00:00') : d;

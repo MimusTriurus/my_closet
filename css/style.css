@@ -181,6 +181,11 @@ main#views{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scro
   background:rgba(255,255,255,.92);display:flex;align-items:center;justify-content:center;
   font-size:11px;color:var(--muted);box-shadow:0 1px 3px rgba(0,0,0,.15)
 }
+/* строка списка с архивной вещью — в чемодане */
+.lrow.gone{border-color:var(--warn)}
+.lrow.gone .thumb{opacity:.5;filter:grayscale(.6)}
+.lrow.gone .t span{color:var(--warn)}
+
 /* образ с архивной вещью виден издалека: рамка, а не только значок */
 .tile.has-gone{outline:2px solid var(--warn);outline-offset:-2px}
 .tile.has-gone .gone-mark{background:var(--warn);color:#fff;box-shadow:none}

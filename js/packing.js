@@ -84,6 +84,7 @@ function openTrip(trip) {
   function render() {
     const items = (trip.itemIds || []).map(itemById).filter(Boolean);
     const { total, done } = progress(trip);
+    const gone = items.filter(i => i.archived).length;
 
     fill(body,
       // закреплено под шапкой: добавление доступно на любой длине списка
@@ -92,6 +93,7 @@ function openTrip(trip) {
           h('span', { class: 'section-title' }, 'Добавить вещи'),
           h('span', { class: 'trip-progress' },
             total ? `Уложено ${done} из ${total}` : 'Список пуст',
+            gone ? ` · ${gone} из архива` : '',
             trip.done ? ' · в архиве' : '')
         ),
         h('div', { class: 'row', style: { gap: '8px' } },
@@ -108,10 +110,12 @@ function openTrip(trip) {
             class: 'btn btn-sm btn-add', style: { flex: '1' }, onclick: async () => {
               const ids = await pickOutfits({ title: 'Развернуть образ в вещи' });
               if (!ids || !ids.length) return;
-              // уложить в чемодан проданное нельзя — архивные вещи образ не отдаёт
+              // архивное берём: список для сборов — напоминание, а не опись
+              // гардероба. Лишнее пользователь уберёт сам, а вот про шарф,
+              // которого уже нет, лучше вспомнить до отъезда
               const fromOutfits = ids
                 .flatMap(id => (outfitById(id)?.layers || []).map(l => l.itemId))
-                .filter(id => itemById(id) && !itemById(id).archived);
+                .filter(id => itemById(id));
               await addItems(trip, [...new Set(fromOutfits)]);
               render();
             }
@@ -134,7 +138,9 @@ function openTrip(trip) {
 
   function row(it) {
     const checked = !!trip.checked?.[it.id];
-    return h('div', { class: 'lrow', style: { opacity: checked ? .55 : 1 } },
+    // архивная вещь в списке — не ошибка, а подсказка: такую вещь надо
+    // либо заменить, либо вычеркнуть. Поэтому помечаем, а не прячем
+    return h('div', { class: 'lrow' + (it.archived ? ' gone' : ''), style: { opacity: checked ? .55 : 1 } },
       h('input', {
         type: 'checkbox', checked,
         style: { width: '22px', height: '22px', accentColor: 'var(--accent)', flex: '0 0 auto' },
@@ -147,7 +153,8 @@ function openTrip(trip) {
       }),
       h('img', { class: 'thumb', src: urlFor(it.img), style: { background: bgCss(it.bg) } }),
       h('div', { class: 't' },
-        h('b', { style: { textDecoration: checked ? 'line-through' : '' } }, itemLabel(it))),
+        h('b', { style: { textDecoration: checked ? 'line-through' : '' } }, itemLabel(it)),
+        it.archived ? h('span', {}, '◷ в архиве') : null),
       h('button', {
         class: 'btn btn-sm', title: 'Убрать из поездки',
         onclick: async () => {

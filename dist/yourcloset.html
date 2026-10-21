@@ -223,6 +223,11 @@ main#views{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scro
   background:rgba(255,255,255,.92);display:flex;align-items:center;justify-content:center;
   font-size:11px;color:var(--muted);box-shadow:0 1px 3px rgba(0,0,0,.15)
 }
+/* строка списка с архивной вещью — в чемодане */
+.lrow.gone{border-color:var(--warn)}
+.lrow.gone .thumb{opacity:.5;filter:grayscale(.6)}
+.lrow.gone .t span{color:var(--warn)}
+
 /* образ с архивной вещью виден издалека: рамка, а не только значок */
 .tile.has-gone{outline:2px solid var(--warn);outline-offset:-2px}
 .tile.has-gone .gone-mark{background:var(--warn);color:#fff;box-shadow:none}
@@ -1779,45 +1784,132 @@ function scanColorFromCamera() {
 /* ===== picker.js ===== */
 // Универсальный выбор вещей / образов (для образов, календаря, чемодана).
 
+const NO_CAT = '__nocat';
+const NO_SUB = '__nosub';
+const ALL = '__all';
+
+/** Строка-папка. Одна на оба выбора: вещи и образы ходят одинаково. */
+const navRow = ({ label, note, onclick, muted, back }) => h('div', {
+  class: 'lrow nav' + (muted ? ' soft' : ''), onclick
+},
+  back ? h('span', { class: 'chev back' }, '\u2039') : null,
+  h('div', { class: 't' }, h('b', {}, label), note ? h('span', {}, note) : null),
+  back ? null : h('span', { class: 'chev' }, '\u203a')
+);
+
+/**
+ * Выбор вещей: категория → подкатегория → сетка, как в «Гардеробе» и в
+ * выборе образов. Рядом чипов это быть не может — когда категорий станет
+ * много, горизонтальный ряд перестанет помещаться.
+ *
+ * Архивные вещи сюда не попадают: «Гардероб» — это то, что есть на руках.
+ * Архивное приходит в поездку другим путём — из прошлой поездки или образа.
+ */
 function pickItems({ title = 'Выбрать вещи', selected = [], multi = true } = {}) {
   return new Promise(res => {
-    let sel = new Set(selected);
-    let catId = null;
+    const sel = new Set(selected);
+    let catId = null, subId = null;
     let done = false;
 
-    const grid = h('div', { class: 'grid' });
-    const chips = h('div', { class: 'chips' });
+    const body = h('div', {});
+    const titleEl = h('span', {}, title);
+    const doneBtn = h('button', {
+      class: 'btn primary',
+      onclick: () => { done = true; modal.close(); res([...sel]); }
+    }, 'Готово');
 
-    function renderChips() {
-      fill(chips, 
-        h('button', { class: 'chip' + (!catId ? ' active' : ''), onclick: () => { catId = null; renderChips(); renderGrid(); } }, 'Все'),
-        ...closetCats().filter(c => visibleItems().some(i => i.catId === c.id)).map(c =>
-          h('button', {
-            class: 'chip' + (catId === c.id ? ' active' : ''),
-            onclick: () => { catId = c.id; renderChips(); renderGrid(); }
-          }, `${c.icon || ''} ${c.name}`))
+    const catOf = id => closetCats().find(c => c.id === id) || null;
+    const inCat = id => visibleItems().filter(i => (i.catId || null) === (id === NO_CAT ? null : id));
+    const subsOf = cat => (cat?.subs || []).filter(sb => inCat(cat.id).some(i => i.subId === sb.id));
+
+    function listed() {
+      if (catId === ALL) return visibleItems();
+      const cat = catOf(catId);
+      const pool = inCat(catId);
+      if (!subId) return pool;
+      const own = new Set(subsOf(cat).map(sb => sb.id));
+      return pool.filter(i => subId === NO_SUB ? !own.has(i.subId) : i.subId === subId);
+    }
+
+    const go = (c, sb = null) => { catId = c; subId = sb; render(); };
+
+    const tile = it => h('div', {
+      class: 'tile' + (sel.has(it.id) ? ' sel' : ''),
+      style: { background: bgCss(it.bg) },
+      onclick: () => {
+        if (!multi) { done = true; modal.close(); return res([it.id]); }
+        sel.has(it.id) ? sel.delete(it.id) : sel.add(it.id);
+        render();
+      }
+    }, h('img', { src: urlFor(it.img) }));
+
+    function render() {
+      doneBtn.textContent = sel.size ? `Готово · ${sel.size}` : 'Готово';
+      const cats = closetCats().filter(c => inCat(c.id).length);
+      const loose = inCat(NO_CAT).length;
+
+      // корень: папки. Категорий нет — показывать нечего, сразу сетка
+      if (catId === null && cats.length) {
+        titleEl.textContent = title;
+        return fill(body,
+          h('div', { class: 'list' },
+            navRow({
+              label: 'Все вещи', note: nItems(visibleItems().length),
+              onclick: () => go(ALL)
+            }),
+            ...cats.map(c => navRow({
+              label: `${c.icon || ''} ${c.name}`.trim(),
+              note: nItems(inCat(c.id).length)
+                + (subsOf(c).length ? ' · ' + subsOf(c).length + ' подкат.' : ''),
+              onclick: () => go(c.id)
+            })),
+            loose ? navRow({
+              label: 'Без категории', note: nItems(loose), muted: true,
+              onclick: () => go(NO_CAT)
+            }) : null
+          )
+        );
+      }
+
+      const cat = catOf(catId);
+      const subs = cat ? subsOf(cat) : [];
+      const sublessN = cat ? inCat(cat.id).filter(i => !subs.some(sb => sb.id === i.subId)).length : 0;
+      titleEl.textContent = catId === ALL ? 'Все вещи'
+        : catId === NO_CAT ? 'Без категории'
+          : subId ? (subId === NO_SUB ? 'Другое' : subs.find(sb => sb.id === subId)?.name || cat.name)
+            : cat?.name || title;
+
+      if (cat && subs.length && !subId) {
+        return fill(body,
+          h('div', { class: 'list' },
+            navRow({ label: 'Категории', back: true, onclick: () => go(null) }),
+            ...subs.map(sb => navRow({
+              label: sb.name, note: nItems(inCat(cat.id).filter(i => i.subId === sb.id).length),
+              onclick: () => go(cat.id, sb.id)
+            })),
+            sublessN ? navRow({
+              label: 'Другое', note: nItems(sublessN), muted: true,
+              onclick: () => go(cat.id, NO_SUB)
+            }) : null
+          )
+        );
+      }
+
+      const list = listed();
+      const up = subId ? () => go(cat.id) : cats.length ? () => go(null) : null;
+      fill(body,
+        up ? h('div', { class: 'list' }, navRow({ label: 'Назад', back: true, onclick: up })) : null,
+        list.length ? h('div', { class: 'grid' }, list.map(tile))
+          : h('div', { class: 'empty' }, 'Здесь пусто')
       );
     }
-    function renderGrid() {
-      const list = visibleItems().filter(i => !catId || i.catId === catId);
-      fill(grid, ...list.map(it => h('div', {
-        class: 'tile' + (sel.has(it.id) ? ' sel' : ''),
-        style: { background: bgCss(it.bg) },
-        onclick: () => {
-          if (multi) { sel.has(it.id) ? sel.delete(it.id) : sel.add(it.id); renderGrid(); }
-          else { done = true; modal.close(); res([it.id]); }
-        }
-      }, h('img', { src: urlFor(it.img) }))));
-      if (!list.length) fill(grid, h('div', { class: 'empty' }, 'Нет вещей'));
-    }
-    renderChips(); renderGrid();
+    render();
 
     const modal = openModal({
-      title, full: true,
-      body: h('div', {}, chips, grid),
+      title: titleEl, full: true, body,
       foot: multi ? [
         h('button', { class: 'btn', onclick: () => modal.close() }, 'Отмена'),
-        h('button', { class: 'btn primary', onclick: () => { done = true; modal.close(); res([...sel]); } }, 'Готово')
+        doneBtn
       ] : null,
       onClose: () => { if (!done) res(null); }
     });
@@ -1833,9 +1925,6 @@ function pickItems({ title = 'Выбрать вещи', selected = [], multi = t
  * multi = false (календарь): нажатие на образ и есть выбор, «Готово» не нужно.
  * multi = true (чемодан): отмечаем несколько и подтверждаем.
  */
-const NO_CAT = '__nocat';
-const NO_SUB = '__nosub';
-
 function pickOutfits({ title = 'Выбрать образы', selected = [], multi = true } = {}) {
   return new Promise(res => {
     const sel = new Set(selected);
@@ -1859,14 +1948,6 @@ function pickOutfits({ title = 'Выбрать образы', selected = [], mul
     }
 
     const go = (c, sb = null) => { catId = c; subId = sb; render(); };
-
-    const row = ({ label, note, onclick, muted, back }) => h('div', {
-      class: 'lrow nav' + (muted ? ' soft' : ''), onclick
-    },
-      back ? h('span', { class: 'chev back' }, '‹') : null,
-      h('div', { class: 't' }, h('b', {}, label), note ? h('span', {}, note) : null),
-      back ? null : h('span', { class: 'chev' }, '›')
-    );
 
     const tile = o => {
       const gone = archivedInOutfit(o).length;
@@ -1893,17 +1974,17 @@ function pickOutfits({ title = 'Выбрать образы', selected = [], mul
         titleEl.textContent = title;
         return fill(body,
           h('div', { class: 'list' },
-            row({
+            navRow({
               label: 'Все образы', note: nOutfits(state.outfits.length),
-              onclick: () => { catId = '__all'; render(); }
+              onclick: () => { catId = ALL; render(); }
             }),
-            ...cats.map(c => row({
+            ...cats.map(c => navRow({
               label: c.name,
               note: nOutfits(inCat(c.id).length)
                 + (subsOf(c).length ? ' · ' + subsOf(c).length + ' подкат.' : ''),
               onclick: () => go(c.id)
             })),
-            loose ? row({
+            loose ? navRow({
               label: 'Без категории', note: nOutfits(loose), muted: true,
               onclick: () => go(NO_CAT)
             }) : null
@@ -1914,7 +1995,7 @@ function pickOutfits({ title = 'Выбрать образы', selected = [], mul
       const cat = catOf(catId);
       const subs = cat ? subsOf(cat) : [];
       const sublessN = cat ? inCat(cat.id).filter(o => !subs.some(sb => sb.id === o.subId)).length : 0;
-      titleEl.textContent = catId === '__all' ? 'Все образы'
+      titleEl.textContent = catId === ALL ? 'Все образы'
         : catId === NO_CAT ? 'Без категории'
           : subId ? (subId === NO_SUB ? 'Другое' : subs.find(sb => sb.id === subId)?.name || cat.name)
             : cat?.name || title;
@@ -1923,12 +2004,12 @@ function pickOutfits({ title = 'Выбрать образы', selected = [], mul
       if (cat && subs.length && !subId) {
         return fill(body,
           h('div', { class: 'list' },
-            row({ label: 'Категории', back: true, onclick: () => go(null) }),
-            ...subs.map(sb => row({
+            navRow({ label: 'Категории', back: true, onclick: () => go(null) }),
+            ...subs.map(sb => navRow({
               label: sb.name, note: nOutfits(inCat(cat.id).filter(o => o.subId === sb.id).length),
               onclick: () => go(cat.id, sb.id)
             })),
-            sublessN ? row({
+            sublessN ? navRow({
               label: 'Другое', note: nOutfits(sublessN), muted: true,
               onclick: () => go(cat.id, NO_SUB)
             }) : null
@@ -1936,10 +2017,10 @@ function pickOutfits({ title = 'Выбрать образы', selected = [], mul
         );
       }
 
-      const list = catId === '__all' ? state.outfits : listed();
+      const list = catId === ALL ? state.outfits : listed();
       const up = subId ? () => go(cat.id) : cats.length ? () => go(null) : null;
       fill(body,
-        up ? h('div', { class: 'list' }, row({ label: 'Назад', back: true, onclick: up })) : null,
+        up ? h('div', { class: 'list' }, navRow({ label: 'Назад', back: true, onclick: up })) : null,
         list.length ? h('div', { class: 'grid g2' }, list.map(tile))
           : h('div', { class: 'empty' }, 'Здесь пусто')
       );
@@ -3730,6 +3811,7 @@ function openTrip(trip) {
   function render() {
     const items = (trip.itemIds || []).map(itemById).filter(Boolean);
     const { total, done } = progress(trip);
+    const gone = items.filter(i => i.archived).length;
 
     fill(body,
       // закреплено под шапкой: добавление доступно на любой длине списка
@@ -3738,6 +3820,7 @@ function openTrip(trip) {
           h('span', { class: 'section-title' }, 'Добавить вещи'),
           h('span', { class: 'trip-progress' },
             total ? `Уложено ${done} из ${total}` : 'Список пуст',
+            gone ? ` · ${gone} из архива` : '',
             trip.done ? ' · в архиве' : '')
         ),
         h('div', { class: 'row', style: { gap: '8px' } },
@@ -3754,10 +3837,12 @@ function openTrip(trip) {
             class: 'btn btn-sm btn-add', style: { flex: '1' }, onclick: async () => {
               const ids = await pickOutfits({ title: 'Развернуть образ в вещи' });
               if (!ids || !ids.length) return;
-              // уложить в чемодан проданное нельзя — архивные вещи образ не отдаёт
+              // архивное берём: список для сборов — напоминание, а не опись
+              // гардероба. Лишнее пользователь уберёт сам, а вот про шарф,
+              // которого уже нет, лучше вспомнить до отъезда
               const fromOutfits = ids
                 .flatMap(id => (outfitById(id)?.layers || []).map(l => l.itemId))
-                .filter(id => itemById(id) && !itemById(id).archived);
+                .filter(id => itemById(id));
               await addItems(trip, [...new Set(fromOutfits)]);
               render();
             }
@@ -3780,7 +3865,9 @@ function openTrip(trip) {
 
   function row(it) {
     const checked = !!trip.checked?.[it.id];
-    return h('div', { class: 'lrow', style: { opacity: checked ? .55 : 1 } },
+    // архивная вещь в списке — не ошибка, а подсказка: такую вещь надо
+    // либо заменить, либо вычеркнуть. Поэтому помечаем, а не прячем
+    return h('div', { class: 'lrow' + (it.archived ? ' gone' : ''), style: { opacity: checked ? .55 : 1 } },
       h('input', {
         type: 'checkbox', checked,
         style: { width: '22px', height: '22px', accentColor: 'var(--accent)', flex: '0 0 auto' },
@@ -3793,7 +3880,8 @@ function openTrip(trip) {
       }),
       h('img', { class: 'thumb', src: urlFor(it.img), style: { background: bgCss(it.bg) } }),
       h('div', { class: 't' },
-        h('b', { style: { textDecoration: checked ? 'line-through' : '' } }, itemLabel(it))),
+        h('b', { style: { textDecoration: checked ? 'line-through' : '' } }, itemLabel(it)),
+        it.archived ? h('span', {}, '◷ в архиве') : null),
       h('button', {
         class: 'btn btn-sm', title: 'Убрать из поездки',
         onclick: async () => {

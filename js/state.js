@@ -382,6 +382,14 @@ export async function deleteOutfit(id) {
 }
 export const outfitById = id => state.outfits.find(o => o.id === id);
 
+/**
+ * Вещи образа. Вещь, ушедшая в архив, из образа не исчезает — иначе
+ * календарь перестал бы соответствовать тому, что было надето. Но знать
+ * о ней нужно: именно она портит счётчик носок при записи «на сегодня».
+ */
+export const outfitItems = o => (o.layers || []).map(l => itemById(l.itemId)).filter(Boolean);
+export const archivedInOutfit = o => outfitItems(o).filter(i => i.archived);
+
 /* ---------- collections (Style Book) ---------- */
 export async function saveCollection(c) {
   const idx = state.collections.findIndex(x => x.id === c.id);

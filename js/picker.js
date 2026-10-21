@@ -1,6 +1,6 @@
 // Универсальный выбор вещей / образов (для образов, календаря, чемодана).
 import { fill, h, openModal, urlFor } from './ui.js';
-import { state, catById, visibleItems, closetCats } from './state.js';
+import { state, catById, visibleItems, closetCats, archivedInOutfit } from './state.js';
 import { bgCss } from './bgs.js';
 
 export function pickItems({ title = 'Выбрать вещи', selected = [], multi = true } = {}) {
@@ -54,13 +54,20 @@ export function pickOutfits({ title = 'Выбрать образы', selected = 
     let done = false;
     const grid = h('div', { class: 'grid g2' });
     function renderGrid() {
-      fill(grid, ...state.outfits.map(o => h('div', {
-        class: 'tile' + (sel.has(o.id) ? ' sel' : ''),
-        onclick: () => {
-          if (multi) { sel.has(o.id) ? sel.delete(o.id) : sel.add(o.id); renderGrid(); }
-          else { done = true; modal.close(); res([o.id]); }
-        }
-      }, h('img', { src: urlFor(o.preview) }), h('span', { class: 'lbl' }, o.name || 'Образ'))));
+      fill(grid, ...state.outfits.map(o => {
+        // метка видна до выбора — предупреждение потом лишь подстраховывает
+        const gone = archivedInOutfit(o).length;
+        return h('div', {
+          class: 'tile' + (sel.has(o.id) ? ' sel' : '') + (gone ? ' has-gone' : ''),
+          onclick: () => {
+            if (multi) { sel.has(o.id) ? sel.delete(o.id) : sel.add(o.id); renderGrid(); }
+            else { done = true; modal.close(); res([o.id]); }
+          }
+        },
+          h('img', { src: urlFor(o.preview) }),
+          gone ? h('span', { class: 'gone-mark', title: 'В образе есть вещь из архива' }, '◷') : null,
+          h('span', { class: 'lbl' }, o.name || 'Образ'));
+      }));
       if (!state.outfits.length) fill(grid, h('div', { class: 'empty' }, 'Образов пока нет'));
     }
     renderGrid();

@@ -5,7 +5,8 @@ import {
 } from './ui.js';
 import {
   state, saveOutfit, deleteOutfit, outfitById, itemById, visibleItems, emit,
-  catById, subById, outfitCats, countInOutfitCat, SCOPE_OUTFIT
+  catById, subById, outfitCats, countInOutfitCat, SCOPE_OUTFIT,
+  outfitItems, archivedInOutfit
 } from './state.js';
 import { uid } from './db.js';
 import { BGS, bgById, bgCss } from './bgs.js';
@@ -32,10 +33,16 @@ export async function openOutfitEditor(existing, isCopy = false) {
   const toolbar = h('div', { class: 'tools' });
   const opts = h('div', { class: 'tool-opts' });
 
+  // редактор отдаёт сохранённый образ наружу: календарю нужно положить
+  // на день именно копию, которую пользователь только что собрал
+  let settle;
+  const done = new Promise(r => { settle = r; });
+
   const modal = openModal({
     title: !existing || isCopy ? 'Новый образ' : 'Редактировать образ',
     full: true,
     body: h('div', { style: { display: 'flex', flexDirection: 'column', height: '100%', margin: '-12px' } }, host, opts, toolbar),
+    onClose: () => settle(saved),
     foot: [
       h('button', { class: 'btn', onclick: () => modal.close() }, 'Отмена'),
       h('button', { class: 'btn primary', onclick: save }, 'Сохранить')
@@ -174,6 +181,8 @@ export async function openOutfitEditor(existing, isCopy = false) {
   }
   fill(opts, h('div', { class: 'muted small' }, 'Тапните вещь, чтобы двигать, вращать и менять размер.'));
 
+  let saved = null;
+
   async function save() {
     const nodes = layer.find('Image');
     if (!nodes.length) return toast('Добавьте хотя бы одну вещь');
@@ -189,11 +198,14 @@ export async function openOutfitEditor(existing, isCopy = false) {
       outfit.name = await promptDialog('Название образа', '', 'Например, «Офис, вторник»') || 'Образ';
     }
     await saveOutfit(outfit);
+    saved = outfit;
     busy(false);
     window.removeEventListener('resize', onResize);
     modal.close();
     toast('Образ сохранён');
   }
+
+  return done;
 }
 
 /* ---------- пространство категорий образов ---------- */
@@ -263,9 +275,16 @@ export function outfitsNav() {
 /* ---------- карточка образа ---------- */
 const closeCard = () => { nav.outfitId = null; emit(); };
 
-/** Вещи образа, которых уже нет в гардеробе, в нём остаются — но помечаются. */
-export const outfitItems = o => (o.layers || []).map(l => itemById(l.itemId)).filter(Boolean);
-export const archivedInOutfit = o => outfitItems(o).filter(i => i.archived);
+/**
+ * Называем архивные вещи по производителю — но только те, у кого он есть.
+ * Иначе в строку попадала бы гардеробная категория вроде «Сортировка»,
+ * и выходило бы «в архиве: Сортировка».
+ */
+function goneText(gone) {
+  const named = gone.filter(i => i.brandId).map(itemLabel);
+  return `${nItems(gone.length)} из этого образа в архиве`
+    + (named.length === gone.length ? `: ${named.join(', ')}` : '');
+}
 
 const previewOf = o => o
   ? h('img', { class: 'thumb', src: urlFor(o.preview), style: { background: bgCss(o.bg) } })
@@ -286,9 +305,7 @@ function renderOutfitCard(root, o) {
 
     // вещь, ушедшая в архив, образ не портит — но знать об этом нужно до того,
     // как образ попадёт в календарь и добавит ей носку, которой не было
-    gone.length ? h('p', { class: 'warn-line' },
-      `${nItems(gone.length)} из этого образа ${gone.length === 1 ? 'в архиве' : 'в архиве'}: `
-      + gone.map(itemLabel).join(', ')) : null,
+    gone.length ? h('p', { class: 'warn-line' }, goneText(gone)) : null,
 
     h('div', { class: 'section-title' }, 'Вещи в образе'),
     items.length ? h('div', { class: 'grid' }, items.map(it => h('div', {
@@ -374,6 +391,36 @@ function pickOutfitPlace() {
       );
     }
     render(null);
+  });
+}
+
+/**
+ * Образ с архивной вещью на сегодня или вперёд — почти наверняка ошибка:
+ * надеть проданное нельзя, а счётчик носок у архивной вещи вырастет на
+ * носку, которой не было. На прошедший день не спрашиваем: тогда вещь ещё
+ * была, и это самый частый законный случай.
+ */
+export function askArchivedInDay(o, gone) {
+  return new Promise(res => {
+    let answered = false;
+    const modal = openModal({
+      title: 'В образе вещь из архива',
+      body: h('div', {},
+        h('p', { style: { margin: '2px 0 10px' } },
+          `В образе «${o.name || 'Образ'}» ${goneText(gone).replace('из этого образа ', '')}.`),
+        h('p', { class: 'muted small', style: { margin: '0 0 4px' } },
+          'Если вы надели другую вещь вместо неё, соберите копию образа — иначе '
+          + 'носка достанется той, что лежит в архиве.')),
+      foot: [
+        h('button', {
+          class: 'btn primary', onclick: () => { answered = true; res('copy'); modal.close(); }
+        }, '⧉ Собрать копию'),
+        h('button', {
+          class: 'btn quiet', onclick: () => { answered = true; res('keep'); modal.close(); }
+        }, 'Всё равно добавить')
+      ],
+      onClose: () => { if (!answered) res(null); }
+    });
   });
 }
 

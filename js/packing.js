@@ -108,7 +108,10 @@ function openTrip(trip) {
             class: 'btn btn-sm btn-add', style: { flex: '1' }, onclick: async () => {
               const ids = await pickOutfits({ title: 'Развернуть образ в вещи' });
               if (!ids || !ids.length) return;
-              const fromOutfits = ids.flatMap(id => (outfitById(id)?.layers || []).map(l => l.itemId));
+              // уложить в чемодан проданное нельзя — архивные вещи образ не отдаёт
+              const fromOutfits = ids
+                .flatMap(id => (outfitById(id)?.layers || []).map(l => l.itemId))
+                .filter(id => itemById(id) && !itemById(id).archived);
               await addItems(trip, [...new Set(fromOutfits)]);
               render();
             }

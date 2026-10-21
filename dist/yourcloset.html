@@ -1124,6 +1124,14 @@ async function deleteOutfit(id) {
 }
 const outfitById = id => state.outfits.find(o => o.id === id);
 
+/**
+ * Вещи образа. Вещь, ушедшая в архив, из образа не исчезает — иначе
+ * календарь перестал бы соответствовать тому, что было надето. Но знать
+ * о ней нужно: именно она портит счётчик носок при записи «на сегодня».
+ */
+const outfitItems = o => (o.layers || []).map(l => itemById(l.itemId)).filter(Boolean);
+const archivedInOutfit = o => outfitItems(o).filter(i => i.archived);
+
 /* ---------- collections (Style Book) ---------- */
 async function saveCollection(c) {
   const idx = state.collections.findIndex(x => x.id === c.id);
@@ -1781,13 +1789,20 @@ function pickOutfits({ title = 'Выбрать образы', selected = [], mul
     let done = false;
     const grid = h('div', { class: 'grid g2' });
     function renderGrid() {
-      fill(grid, ...state.outfits.map(o => h('div', {
-        class: 'tile' + (sel.has(o.id) ? ' sel' : ''),
-        onclick: () => {
-          if (multi) { sel.has(o.id) ? sel.delete(o.id) : sel.add(o.id); renderGrid(); }
-          else { done = true; modal.close(); res([o.id]); }
-        }
-      }, h('img', { src: urlFor(o.preview) }), h('span', { class: 'lbl' }, o.name || 'Образ'))));
+      fill(grid, ...state.outfits.map(o => {
+        // метка видна до выбора — предупреждение потом лишь подстраховывает
+        const gone = archivedInOutfit(o).length;
+        return h('div', {
+          class: 'tile' + (sel.has(o.id) ? ' sel' : '') + (gone ? ' has-gone' : ''),
+          onclick: () => {
+            if (multi) { sel.has(o.id) ? sel.delete(o.id) : sel.add(o.id); renderGrid(); }
+            else { done = true; modal.close(); res([o.id]); }
+          }
+        },
+          h('img', { src: urlFor(o.preview) }),
+          gone ? h('span', { class: 'gone-mark', title: 'В образе есть вещь из архива' }, '◷') : null,
+          h('span', { class: 'lbl' }, o.name || 'Образ'));
+      }));
       if (!state.outfits.length) fill(grid, h('div', { class: 'empty' }, 'Образов пока нет'));
     }
     renderGrid();
@@ -2800,7 +2815,8 @@ import {
 } from './ui.js';
 import {
   state, saveOutfit, deleteOutfit, outfitById, itemById, visibleItems, emit,
-  catById, subById, outfitCats, countInOutfitCat, SCOPE_OUTFIT
+  catById, subById, outfitCats, countInOutfitCat, SCOPE_OUTFIT,
+  outfitItems, archivedInOutfit
 } from './state.js';
 
 const SW = 640, SH = 860;           // логический размер холста образа
@@ -2821,10 +2837,16 @@ async function openOutfitEditor(existing, isCopy = false) {
   const toolbar = h('div', { class: 'tools' });
   const opts = h('div', { class: 'tool-opts' });
 
+  // редактор отдаёт сохранённый образ наружу: календарю нужно положить
+  // на день именно копию, которую пользователь только что собрал
+  let settle;
+  const done = new Promise(r => { settle = r; });
+
   const modal = openModal({
     title: !existing || isCopy ? 'Новый образ' : 'Редактировать образ',
     full: true,
     body: h('div', { style: { display: 'flex', flexDirection: 'column', height: '100%', margin: '-12px' } }, host, opts, toolbar),
+    onClose: () => settle(saved),
     foot: [
       h('button', { class: 'btn', onclick: () => modal.close() }, 'Отмена'),
       h('button', { class: 'btn primary', onclick: save }, 'Сохранить')
@@ -2963,6 +2985,8 @@ async function openOutfitEditor(existing, isCopy = false) {
   }
   fill(opts, h('div', { class: 'muted small' }, 'Тапните вещь, чтобы двигать, вращать и менять размер.'));
 
+  let saved = null;
+
   async function save() {
     const nodes = layer.find('Image');
     if (!nodes.length) return toast('Добавьте хотя бы одну вещь');
@@ -2978,11 +3002,14 @@ async function openOutfitEditor(existing, isCopy = false) {
       outfit.name = await promptDialog('Название образа', '', 'Например, «Офис, вторник»') || 'Образ';
     }
     await saveOutfit(outfit);
+    saved = outfit;
     busy(false);
     window.removeEventListener('resize', onResize);
     modal.close();
     toast('Образ сохранён');
   }
+
+  return done;
 }
 
 /* ---------- пространство категорий образов ---------- */
@@ -3052,9 +3079,16 @@ function outfitsNav() {
 /* ---------- карточка образа ---------- */
 const closeCard = () => { nav.outfitId = null; emit(); };
 
-/** Вещи образа, которых уже нет в гардеробе, в нём остаются — но помечаются. */
-const outfitItems = o => (o.layers || []).map(l => itemById(l.itemId)).filter(Boolean);
-const archivedInOutfit = o => outfitItems(o).filter(i => i.archived);
+/**
+ * Называем архивные вещи по производителю — но только те, у кого он есть.
+ * Иначе в строку попадала бы гардеробная категория вроде «Сортировка»,
+ * и выходило бы «в архиве: Сортировка».
+ */
+function goneText(gone) {
+  const named = gone.filter(i => i.brandId).map(itemLabel);
+  return `${nItems(gone.length)} из этого образа в архиве`
+    + (named.length === gone.length ? `: ${named.join(', ')}` : '');
+}
 
 const previewOf = o => o
   ? h('img', { class: 'thumb', src: urlFor(o.preview), style: { background: bgCss(o.bg) } })
@@ -3075,9 +3109,7 @@ function renderOutfitCard(root, o) {
 
     // вещь, ушедшая в архив, образ не портит — но знать об этом нужно до того,
     // как образ попадёт в календарь и добавит ей носку, которой не было
-    gone.length ? h('p', { class: 'warn-line' },
-      `${nItems(gone.length)} из этого образа ${gone.length === 1 ? 'в архиве' : 'в архиве'}: `
-      + gone.map(itemLabel).join(', ')) : null,
+    gone.length ? h('p', { class: 'warn-line' }, goneText(gone)) : null,
 
     h('div', { class: 'section-title' }, 'Вещи в образе'),
     items.length ? h('div', { class: 'grid' }, items.map(it => h('div', {
@@ -3163,6 +3195,36 @@ function pickOutfitPlace() {
       );
     }
     render(null);
+  });
+}
+
+/**
+ * Образ с архивной вещью на сегодня или вперёд — почти наверняка ошибка:
+ * надеть проданное нельзя, а счётчик носок у архивной вещи вырастет на
+ * носку, которой не было. На прошедший день не спрашиваем: тогда вещь ещё
+ * была, и это самый частый законный случай.
+ */
+function askArchivedInDay(o, gone) {
+  return new Promise(res => {
+    let answered = false;
+    const modal = openModal({
+      title: 'В образе вещь из архива',
+      body: h('div', {},
+        h('p', { style: { margin: '2px 0 10px' } },
+          `В образе «${o.name || 'Образ'}» ${goneText(gone).replace('из этого образа ', '')}.`),
+        h('p', { class: 'muted small', style: { margin: '0 0 4px' } },
+          'Если вы надели другую вещь вместо неё, соберите копию образа — иначе '
+          + 'носка достанется той, что лежит в архиве.')),
+      foot: [
+        h('button', {
+          class: 'btn primary', onclick: () => { answered = true; res('copy'); modal.close(); }
+        }, '⧉ Собрать копию'),
+        h('button', {
+          class: 'btn quiet', onclick: () => { answered = true; res('keep'); modal.close(); }
+        }, 'Всё равно добавить')
+      ],
+      onClose: () => { if (!answered) res(null); }
+    });
   });
 }
 
@@ -3277,6 +3339,28 @@ const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль',
   'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
 
+/**
+ * Сверяет добавленные образы: нет ли в них вещей, ушедших в архив.
+ * Спрашиваем только про сегодня и вперёд — см. askArchivedInDay.
+ */
+async function vetOutfits(dateStr, ids, before) {
+  if (dateStr < iso(new Date())) return ids;        // строки «ГГГГ-ММ-ДД» сравниваются как даты
+  const out = [...ids];
+  for (const id of ids.filter(x => !before.includes(x))) {
+    const o = outfitById(id);
+    const gone = o ? archivedInOutfit(o) : [];
+    if (!gone.length) continue;
+    const act = await askArchivedInDay(o, gone);
+    if (act === 'keep') continue;
+    // и отказ, и сборка копии убирают исходный образ со дня
+    out.splice(out.indexOf(id), 1);
+    if (act !== 'copy') continue;
+    const copy = await copyOutfit(o, gone.map(i => i.id));
+    if (copy) out.push(copy.id);
+  }
+  return out;
+}
+
 function openDay(dateStr) {
   const day = dayByDate(dateStr) || { id: dateStr, outfitIds: [], itemIds: [] };
   const body = h('div', {});
@@ -3290,7 +3374,10 @@ function openDay(dateStr) {
         h('button', {
           class: 'btn primary', style: { flex: '1' }, onclick: async () => {
             const ids = await pickOutfits({ selected: day.outfitIds, title: 'Образы на день' });
-            if (ids) { day.outfitIds = ids; await saveDay(day); render(); }
+            if (!ids) return;
+            day.outfitIds = await vetOutfits(dateStr, ids, day.outfitIds || []);
+            await saveDay(day);
+            render();
           }
         }, '👗 Образы'),
         h('button', {
@@ -3465,7 +3552,10 @@ function openTrip(trip) {
             class: 'btn btn-sm btn-add', style: { flex: '1' }, onclick: async () => {
               const ids = await pickOutfits({ title: 'Развернуть образ в вещи' });
               if (!ids || !ids.length) return;
-              const fromOutfits = ids.flatMap(id => (outfitById(id)?.layers || []).map(l => l.itemId));
+              // уложить в чемодан проданное нельзя — архивные вещи образ не отдаёт
+              const fromOutfits = ids
+                .flatMap(id => (outfitById(id)?.layers || []).map(l => l.itemId))
+                .filter(id => itemById(id) && !itemById(id).archived);
               await addItems(trip, [...new Set(fromOutfits)]);
               render();
             }

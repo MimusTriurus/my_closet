@@ -1,13 +1,36 @@
 // Вкладка «Календарь»: планирование образов и отдельных вещей по дням.
 import { fill, h, urlFor, openModal, toast, iso, fmtDate } from './ui.js';
-import { state, saveDay, dayByDate, outfitById, itemById, emit } from './state.js';
+import { state, saveDay, dayByDate, outfitById, itemById, archivedInOutfit, emit } from './state.js';
 import { pickItems, pickOutfits } from './picker.js';
+import { askArchivedInDay, copyOutfit } from './outfits.js';
 import { bgCss } from './bgs.js';
 
 let cursor = new Date();
 const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль',
   'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+
+/**
+ * Сверяет добавленные образы: нет ли в них вещей, ушедших в архив.
+ * Спрашиваем только про сегодня и вперёд — см. askArchivedInDay.
+ */
+async function vetOutfits(dateStr, ids, before) {
+  if (dateStr < iso(new Date())) return ids;        // строки «ГГГГ-ММ-ДД» сравниваются как даты
+  const out = [...ids];
+  for (const id of ids.filter(x => !before.includes(x))) {
+    const o = outfitById(id);
+    const gone = o ? archivedInOutfit(o) : [];
+    if (!gone.length) continue;
+    const act = await askArchivedInDay(o, gone);
+    if (act === 'keep') continue;
+    // и отказ, и сборка копии убирают исходный образ со дня
+    out.splice(out.indexOf(id), 1);
+    if (act !== 'copy') continue;
+    const copy = await copyOutfit(o, gone.map(i => i.id));
+    if (copy) out.push(copy.id);
+  }
+  return out;
+}
 
 function openDay(dateStr) {
   const day = dayByDate(dateStr) || { id: dateStr, outfitIds: [], itemIds: [] };
@@ -22,7 +45,10 @@ function openDay(dateStr) {
         h('button', {
           class: 'btn primary', style: { flex: '1' }, onclick: async () => {
             const ids = await pickOutfits({ selected: day.outfitIds, title: 'Образы на день' });
-            if (ids) { day.outfitIds = ids; await saveDay(day); render(); }
+            if (!ids) return;
+            day.outfitIds = await vetOutfits(dateStr, ids, day.outfitIds || []);
+            await saveDay(day);
+            render();
           }
         }, '👗 Образы'),
         h('button', {

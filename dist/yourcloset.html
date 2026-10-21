@@ -43,7 +43,7 @@
 :root{
   --bg:#faf7f4; --surface:#ffffff; --surface-2:#f2ece7; --line:#e6ddd5;
   --text:#241f1c; --muted:#8b7f76; --accent:#c1785c; --accent-soft:#f6e7df;
-  --danger:#c0483f; --ok:#4f8a5b;
+  --danger:#c0483f; --ok:#4f8a5b; --warn:#d08a8a;
   --font-ui:'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif;
   --font-display:'Cormorant Garamond', Georgia, 'Times New Roman', serif;
   --r:14px; --r-sm:10px; --shadow:0 1px 2px rgba(36,31,28,.06),0 6px 18px rgba(36,31,28,.07);
@@ -215,6 +215,7 @@ main#views{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scro
 .warn-line{
   margin:8px 0 0;padding:9px 11px;border-radius:var(--r-sm);
   background:var(--surface-2);color:var(--muted);font-size:12.5px;line-height:1.45;
+  border-left:3px solid var(--warn);
 }
 .tile.gone img{opacity:.45;filter:grayscale(.7)}
 .tile .gone-mark{
@@ -222,7 +223,9 @@ main#views{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scro
   background:rgba(255,255,255,.92);display:flex;align-items:center;justify-content:center;
   font-size:11px;color:var(--muted);box-shadow:0 1px 3px rgba(0,0,0,.15)
 }
-.tile.has-gone{outline:1px dashed var(--muted);outline-offset:-1px}
+/* образ с архивной вещью виден издалека: рамка, а не только значок */
+.tile.has-gone{outline:2px solid var(--warn);outline-offset:-2px}
+.tile.has-gone .gone-mark{background:var(--warn);color:#fff;box-shadow:none}
 input[type=color].hex{width:100%;height:42px;padding:2px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--surface)}
 .row .cur{width:58px;flex:0 0 auto;text-align:center}
 
@@ -578,7 +581,11 @@ function confirmDialog(text, okText = 'Удалить') {
   });
 }
 
-function promptDialog(title, value = '', label = 'Название') {
+/**
+ * allowEmpty — когда пустое значение осмысленно (например, у образа можно
+ * убрать название). Без него пустая строка неотличима от отмены.
+ */
+function promptDialog(title, value = '', label = 'Название', allowEmpty = false) {
   return new Promise(res => {
     const input = h('input', { type: 'text', value });
     let answered = false;
@@ -588,7 +595,10 @@ function promptDialog(title, value = '', label = 'Название') {
       body: h('label', { class: 'field' }, h('span', {}, label), input),
       foot: [
         h('button', { class: 'btn', onclick: () => answer(null) }, 'Отмена'),
-        h('button', { class: 'btn primary', onclick: () => answer(input.value.trim() || null) }, 'ОК')
+        h('button', {
+          class: 'btn primary',
+          onclick: () => answer(allowEmpty ? input.value.trim() : input.value.trim() || null)
+        }, 'ОК')
       ],
       onClose: () => { if (!answered) res(null); }
     });
@@ -3104,8 +3114,20 @@ function renderOutfitCard(root, o) {
     h('div', { class: 'card-photo tall', style: { background: bgCss(o.bg) } },
       h('img', { src: urlFor(o.preview), alt: o.name || 'Образ' })),
 
+    // название образа больше негде поменять: редактор спрашивает его только
+    // один раз, при первом сохранении
     h('div', { class: 'lrow' },
-      h('div', { class: 't' }, h('b', {}, o.name || 'Образ'), h('span', {}, place))),
+      h('div', { class: 't' },
+        h('b', { class: o.name ? '' : 'muted' }, o.name || 'без названия'),
+        h('span', {}, place)),
+      h('button', {
+        class: 'btn btn-sm', title: 'Название', onclick: async () => {
+          const n = await promptDialog('Название образа', o.name || '', 'Название', true);
+          if (n === null) return;
+          o.name = n;
+          await saveOutfit(o);
+        }
+      }, '✎')),
 
     // вещь, ушедшая в архив, образ не портит — но знать об этом нужно до того,
     // как образ попадёт в календарь и добавит ей носку, которой не было

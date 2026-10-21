@@ -300,8 +300,20 @@ function renderOutfitCard(root, o) {
     h('div', { class: 'card-photo tall', style: { background: bgCss(o.bg) } },
       h('img', { src: urlFor(o.preview), alt: o.name || 'Образ' })),
 
+    // название образа больше негде поменять: редактор спрашивает его только
+    // один раз, при первом сохранении
     h('div', { class: 'lrow' },
-      h('div', { class: 't' }, h('b', {}, o.name || 'Образ'), h('span', {}, place))),
+      h('div', { class: 't' },
+        h('b', { class: o.name ? '' : 'muted' }, o.name || 'без названия'),
+        h('span', {}, place)),
+      h('button', {
+        class: 'btn btn-sm', title: 'Название', onclick: async () => {
+          const n = await promptDialog('Название образа', o.name || '', 'Название', true);
+          if (n === null) return;
+          o.name = n;
+          await saveOutfit(o);
+        }
+      }, '✎')),
 
     // вещь, ушедшая в архив, образ не портит — но знать об этом нужно до того,
     // как образ попадёт в календарь и добавит ей носку, которой не было

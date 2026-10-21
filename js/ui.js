@@ -88,7 +88,11 @@ export function confirmDialog(text, okText = 'Удалить') {
   });
 }
 
-export function promptDialog(title, value = '', label = 'Название') {
+/**
+ * allowEmpty — когда пустое значение осмысленно (например, у образа можно
+ * убрать название). Без него пустая строка неотличима от отмены.
+ */
+export function promptDialog(title, value = '', label = 'Название', allowEmpty = false) {
   return new Promise(res => {
     const input = h('input', { type: 'text', value });
     let answered = false;
@@ -98,7 +102,10 @@ export function promptDialog(title, value = '', label = 'Название') {
       body: h('label', { class: 'field' }, h('span', {}, label), input),
       foot: [
         h('button', { class: 'btn', onclick: () => answer(null) }, 'Отмена'),
-        h('button', { class: 'btn primary', onclick: () => answer(input.value.trim() || null) }, 'ОК')
+        h('button', {
+          class: 'btn primary',
+          onclick: () => answer(allowEmpty ? input.value.trim() : input.value.trim() || null)
+        }, 'ОК')
       ],
       onClose: () => { if (!answered) res(null); }
     });

@@ -416,12 +416,14 @@ function renderItemCard(root, item) {
 export function filteredItems() {
   let list = closetItems();
   if (filters.favOnly) list = list.filter(i => i.fav);
-  if (filters.color === NO_COLOR) list = list.filter(i => !(i.colorIds || []).length);
+  if (filters.color === NONE) list = list.filter(i => !(i.colorIds || []).length);
   else if (filters.color) list = list.filter(i => (i.colorIds || []).includes(filters.color));
-  if (filters.brand) list = list.filter(i => i.brandId === filters.brand);
+  if (filters.brand === NONE) list = list.filter(i => !i.brandId);
+  else if (filters.brand) list = list.filter(i => i.brandId === filters.brand);
   // по основному составу и без оглядки на проценты: ищут «что у меня
   // шерстяного», а не «шерсть ровно восемьдесят»
-  if (filters.material) {
+  if (filters.material === NONE) list = list.filter(i => !(i.material?.main || []).length);
+  else if (filters.material) {
     list = list.filter(i => (i.material?.main || []).some(p => p.id === filters.material));
   }
   return list.sort(filters.sort === 'old'
@@ -542,8 +544,8 @@ function openSubManager(cat, onDone) {
  * nav.archive — то же дерево, но по архивным вещам и архивным категориям.
  */
 export const OTHER = '__other';
-// отдельное значение фильтра: вещи, которым цвет ещё не проставлен
-export const NO_COLOR = '__nocolor';
+// отдельное значение фильтра: вещи, у которых это поле не заполнено
+export const NONE = '__none';
 // высота закреплённой строки внизу — должна совпадать с .service-bar в стилях
 const SERVICE_BAR_H = 42;
 export const nav = { all: false, archive: false, catId: null, subId: null, itemId: null };
@@ -946,19 +948,27 @@ function renderAll(root) {
   const list = filteredItems();
   const set = (field, v) => { filters[field] = v; emit(); };
 
-  const noColor = closetItems().filter(i => !(i.colorIds || []).length).length;
+  // «без …» показываем, только когда такие вещи есть: иначе это пустая строка
+  const blanks = {
+    color: closetItems().filter(i => !(i.colorIds || []).length).length,
+    brand: closetItems().filter(i => !i.brandId).length,
+    material: closetItems().filter(i => !(i.material?.main || []).length).length
+  };
 
-  const filterChip = (label, field, key, opts = {}) => {
+  const filterChip = (label, field, key, noneLabel) => {
     const id = filters[field];
-    const name = id === NO_COLOR ? 'без цвета' : id ? entryName(key, id) : null;
+    const name = id === NONE ? noneLabel.toLowerCase() : id ? entryName(key, id) : null;
     return h('button', {
       class: 'chip' + (name ? ' active' : ''),
       onclick: async () => {
-        const v = await openListPicker(key, { selected: id, title: label, ...opts });
+        const v = await openListPicker(key, {
+          selected: id, title: label,
+          first: blanks[field] ? { id: NONE, name: noneLabel } : null
+        });
         if (v !== null) set(field, v || null);
       }
     },
-      id && id !== NO_COLOR && key === 'colors'
+      id && id !== NONE && key === 'colors'
         ? h('span', { class: 'dot', style: { background: listEntry('colors', id)?.hex } }) : null,
       name ? `${label}: ${name}` : label,
       name ? h('span', {
@@ -968,10 +978,9 @@ function renderAll(root) {
   };
 
   const filterRow = h('div', { class: 'chips filters' },
-    filterChip('Цвет', 'color', 'colors',
-      noColor ? { first: { id: NO_COLOR, name: 'Без цвета' } } : {}),
-    filterChip('Производитель', 'brand', 'brands'),
-    filterChip('Материал', 'material', 'materials'),
+    filterChip('Цвет', 'color', 'colors', 'Без цвета'),
+    filterChip('Производитель', 'brand', 'brands', 'Без производителя'),
+    filterChip('Материал', 'material', 'materials', 'Без материала'),
     h('button', {
       class: 'chip' + (filters.favOnly ? ' active' : ''),
       onclick: () => set('favOnly', !filters.favOnly)

@@ -118,7 +118,14 @@ async function loadLists() {
   }
 }
 
-export const listItems = key => state.lists[key] || [];
+/**
+ * Списки всегда отдаются по алфавиту — и в фильтрах, и в карточке. Порядок
+ * добавления ничего не говорит тому, кто ищет в списке глазами.
+ * Сравнение в русской локали: кириллица идёт перед латиницей, как и везде
+ * в телефоне с русским языком.
+ */
+export const listItems = key =>
+  [...(state.lists[key] || [])].sort((a, b) => a.name.localeCompare(b.name, 'ru'));
 export const listEntry = (key, id) => listItems(key).find(e => e.id === id) || null;
 export const listName = (key, id) => listEntry(key, id)?.name || '';
 

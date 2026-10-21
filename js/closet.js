@@ -15,8 +15,14 @@ import { BGS, bgCss } from './bgs.js';
 import { openImageEditor, imageFromBlob, downscaleBlob } from './editor.js';
 import { pickImageFile, pickImageFiles, captureFromCamera } from './capture.js';
 
-// фильтры живут только в разделе «Все вещи» — по категориям ходит nav
-export const filters = { color: null, brand: null, material: null, favOnly: false, sort: 'new' };
+/**
+ * Фильтры живут в «Все вещи» и «Весь архив» — по категориям ходит nav.
+ * Наборы у гардероба и архива **раздельные**: это разные пространства, и
+ * фильтр, выставленный в одном, не должен встречать в другом.
+ */
+const newFilters = () => ({ color: null, brand: null, material: null, favOnly: false, sort: 'new' });
+const FILTERS = { closet: newFilters(), archive: newFilters() };
+export const filters = (arc = nav.archive) => FILTERS[arc ? 'archive' : 'closet'];
 
 /* ---------- добавление вещи ---------- */
 export async function addItemFlow(sourceBlob, preset = {}) {
@@ -365,8 +371,10 @@ function renderItemCard(root, item) {
             const c = listEntry('colors', id);
             return c ? h('span', {
               class: 'chip', onclick: () => {
-                filters.color = c.id;
-                nav.itemId = null; nav.archive = false; nav.catId = null; nav.subId = null; nav.all = true;
+                // архивная вещь ведёт в архив, гардеробная — в гардероб
+                const arc = !!item.archived;
+                filters(arc).color = c.id;
+                nav.itemId = null; nav.archive = arc; nav.catId = null; nav.subId = null; nav.all = true;
                 emit();
               }
             }, h('span', { class: 'dot', style: { background: c.hex } }), c.name) : null;
@@ -413,20 +421,21 @@ function renderItemCard(root, item) {
 }
 
 /* ---------- фильтрация ---------- */
-export function filteredItems() {
-  let list = closetItems();
-  if (filters.favOnly) list = list.filter(i => i.fav);
-  if (filters.color === NONE) list = list.filter(i => !(i.colorIds || []).length);
-  else if (filters.color) list = list.filter(i => (i.colorIds || []).includes(filters.color));
-  if (filters.brand === NONE) list = list.filter(i => !i.brandId);
-  else if (filters.brand) list = list.filter(i => i.brandId === filters.brand);
+export function filteredItems(arc = nav.archive) {
+  const f = filters(arc);
+  let list = arc ? archivedItems() : closetItems();
+  if (f.favOnly) list = list.filter(i => i.fav);
+  if (f.color === NONE) list = list.filter(i => !(i.colorIds || []).length);
+  else if (f.color) list = list.filter(i => (i.colorIds || []).includes(f.color));
+  if (f.brand === NONE) list = list.filter(i => !i.brandId);
+  else if (f.brand) list = list.filter(i => i.brandId === f.brand);
   // по основному составу и без оглядки на проценты: ищут «что у меня
   // шерстяного», а не «шерсть ровно восемьдесят»
-  if (filters.material === NONE) list = list.filter(i => !(i.material?.main || []).length);
-  else if (filters.material) {
-    list = list.filter(i => (i.material?.main || []).some(p => p.id === filters.material));
+  if (f.material === NONE) list = list.filter(i => !(i.material?.main || []).length);
+  else if (f.material) {
+    list = list.filter(i => (i.material?.main || []).some(p => p.id === f.material));
   }
-  return list.sort(filters.sort === 'old'
+  return list.sort(f.sort === 'old'
     ? (a, b) => a.createdAt - b.createdAt
     : (a, b) => b.createdAt - a.createdAt);
 }
@@ -587,7 +596,9 @@ export function closetNav() {
     const it = itemById(nav.itemId);
     if (it) return { title: itemLabel(it), back: closeCard };
   }
-  if (nav.all) return { title: 'Все вещи', back: goRoot };
+  if (nav.all) return nav.archive
+    ? { title: 'Весь архив', back: goArchive }
+    : { title: 'Все вещи', back: goRoot };
   if (nav.archive && !nav.catId) return { title: 'Архив вещей', back: goRoot };
   if (nav.archive && nav.catId === OTHER) return { title: 'Другое', back: goArchive };
 
@@ -840,6 +851,13 @@ function renderArchiveRoot(root) {
 
   fill(root,
     cats.length || loose ? h('div', { class: 'list' },
+      // как «Все вещи» в гардеробе: плоский список с фильтрами,
+      // чтобы вещь находилась и тогда, когда забыто, в какой она категории
+      navRow({
+        thumbNode: collageThumb(archivedItems()), title: 'Весь архив',
+        note: nItems(archivedItems().length),
+        onclick: () => { nav.all = true; emit(); }
+      }),
       ...cats.map(c => navRow({
         thumb: latestIn(c.id, null, true), title: c.name,
         note: nItems(countInArcCat(c.id))
@@ -945,18 +963,21 @@ function renderItems(root, list, emptyText) {
  * «по производителю» ничего не находит, а лишь расставляет по алфавиту.
  */
 function renderAll(root) {
-  const list = filteredItems();
-  const set = (field, v) => { filters[field] = v; emit(); };
+  const arc = nav.archive;
+  const f = filters(arc);
+  const list = filteredItems(arc);
+  const pool = arc ? archivedItems() : closetItems();
+  const set = (field, v) => { f[field] = v; emit(); };
 
   // «без …» показываем, только когда такие вещи есть: иначе это пустая строка
   const blanks = {
-    color: closetItems().filter(i => !(i.colorIds || []).length).length,
-    brand: closetItems().filter(i => !i.brandId).length,
-    material: closetItems().filter(i => !(i.material?.main || []).length).length
+    color: pool.filter(i => !(i.colorIds || []).length).length,
+    brand: pool.filter(i => !i.brandId).length,
+    material: pool.filter(i => !(i.material?.main || []).length).length
   };
 
   const filterChip = (label, field, key, noneLabel) => {
-    const id = filters[field];
+    const id = f[field];
     const name = id === NONE ? noneLabel.toLowerCase() : id ? entryName(key, id) : null;
     return h('button', {
       class: 'chip' + (name ? ' active' : ''),
@@ -982,8 +1003,8 @@ function renderAll(root) {
     filterChip('Производитель', 'brand', 'brands', 'Без производителя'),
     filterChip('Материал', 'material', 'materials', 'Без материала'),
     h('button', {
-      class: 'chip' + (filters.favOnly ? ' active' : ''),
-      onclick: () => set('favOnly', !filters.favOnly)
+      class: 'chip' + (f.favOnly ? ' active' : ''),
+      onclick: () => set('favOnly', !f.favOnly)
     }, '★ Избранное')
   );
 
@@ -994,16 +1015,18 @@ function renderAll(root) {
       onchange: e => set('sort', e.target.value)
     },
       [['new', 'Сначала новые'], ['old', 'Сначала старые']]
-        .map(([v, t]) => h('option', { value: v, selected: filters.sort === v }, t)))
+        .map(([v, t]) => h('option', { value: v, selected: f.sort === v }, t)))
   );
 
   fill(root, filterRow, controls,
     list.length ? h('div', { class: 'grid' }, list.map(it => itemTile(it))) : h('div', { class: 'empty' },
-      h('div', { class: 'big' }, '🧺'),
-      h('p', {}, closetItems().length
+      h('div', { class: 'big' }, arc ? '📦' : '🧺'),
+      h('p', {}, pool.length
         ? 'Ничего не найдено по фильтрам'
-        : 'Гардероб пуст. Чтобы добавить вещи, нажмите «+» внизу справа.')),
-    h('button', { class: 'fab', onclick: startAddItem, title: 'Добавить вещь' }, '+')
+        : arc
+          ? 'Архив пуст.'
+          : 'Гардероб пуст. Чтобы добавить вещи, нажмите «+» внизу справа.')),
+    arc ? null : h('button', { class: 'fab', onclick: startAddItem, title: 'Добавить вещь' }, '+')
   );
   root.style.paddingBottom = '';
 }

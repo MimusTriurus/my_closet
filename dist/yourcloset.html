@@ -205,6 +205,10 @@ main#views{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scro
 .swatch.none{background:var(--surface);border:1px dashed var(--muted);color:var(--muted);
   display:flex;align-items:center;justify-content:center;font-size:14px}
 .chip.add{border-style:dashed;color:var(--muted)}
+/* строка фильтров: все поля выглядят одинаково, выбранное написано в чипе */
+.chips.filters{padding:6px 0 2px;flex-wrap:wrap;overflow:visible}
+.chips.filters .chip{white-space:nowrap}
+.chip .x{margin-left:4px;opacity:.7;font-size:11px}
 input[type=color].hex{width:100%;height:42px;padding:2px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--surface)}
 .row .cur{width:58px;flex:0 0 auto;text-align:center}
 
@@ -1746,11 +1750,11 @@ import {
 import {
   state, saveItem, saveItems, deleteItem, saveCat, deleteCat, catById, subById, countInCat,
   visibleItems, archivedItems, itemById, closetCats, archiveCats, countInArcCat, countIn, SCOPE_ARCHIVE,
-  createItem, sortingCat, emit, listEntry, listItems, lastCurrency, wearCount, closetItems
+  createItem, sortingCat, emit, listEntry, lastCurrency, wearCount, closetItems
 } from './state.js';
 
 // фильтры живут только в разделе «Все вещи» — по категориям ходит nav
-const filters = { color: null, sort: 'new', favOnly: false };
+const filters = { color: null, brand: null, material: null, favOnly: false, sort: 'new' };
 
 /* ---------- добавление вещи ---------- */
 async function addItemFlow(sourceBlob, preset = {}) {
@@ -2152,41 +2156,19 @@ function filteredItems() {
   if (filters.favOnly) list = list.filter(i => i.fav);
   if (filters.color === NO_COLOR) list = list.filter(i => !(i.colorIds || []).length);
   else if (filters.color) list = list.filter(i => (i.colorIds || []).includes(filters.color));
-  const hue = i => {
-    const c = listEntry('colors', (i.colorIds || [])[0])?.hex;
-    if (!c) return 999;
-    const [L, a, b] = oklab(...hexToRgb(c));
-    return Math.atan2(b, a);
-  };
-  const sorters = {
-    new: (a, b) => b.createdAt - a.createdAt,
-    old: (a, b) => a.createdAt - b.createdAt,
-    name: (a, b) => entryName('brands', a.brandId).localeCompare(entryName('brands', b.brandId), 'ru'),
-    color: (a, b) => hue(a) - hue(b)
-  };
-  return list.sort(sorters[filters.sort] || sorters.new);
+  if (filters.brand) list = list.filter(i => i.brandId === filters.brand);
+  // по основному составу и без оглядки на проценты: ищут «что у меня
+  // шерстяного», а не «шерсть ровно восемьдесят»
+  if (filters.material) {
+    list = list.filter(i => (i.material?.main || []).some(p => p.id === filters.material));
+  }
+  return list.sort(filters.sort === 'old'
+    ? (a, b) => a.createdAt - b.createdAt
+    : (a, b) => b.createdAt - a.createdAt);
 }
 
 /* ---------- палитра гардероба ---------- */
-/** Палитра для фильтра — та же, что в карточках: своя, а не вычисленная. */
-function closetColors() {
-  const counts = new Map();
-  for (const it of closetItems()) {
-    for (const id of new Set(it.colorIds || [])) counts.set(id, (counts.get(id) || 0) + 1);
-  }
-  return listItems('colors').map(c => ({ ...c, n: counts.get(c.id) || 0 }));
-}
 
-/** Ближайший цвет палитры — для цвета, снятого камерой. */
-function nearestColor(hex) {
-  let best = null, bd = 1e9;
-  for (const c of listItems('colors')) {
-    if (!c.hex) continue;
-    const d = colorDist(hex, c.hex);
-    if (d < bd) { bd = d; best = c; }
-  }
-  return best;
-}
 
 /* ---------- менеджер категорий ---------- */
 /** Один и тот же менеджер обслуживает гардероб и архив — разница только в scope. */
@@ -2692,57 +2674,59 @@ function renderItems(root, list, emptyText) {
   root.style.paddingBottom = on ? '140px' : '';
 }
 
-/** «Все вещи»: единственное место, где работают фильтры по цвету и избранному. */
+/**
+ * «Все вещи»: единственное место с фильтрами. Все они устроены одинаково —
+ * именованный чип открывает тот же список, что и в карточке, выбранное
+ * написано прямо в чипе. Сортировка стоит отдельно и только сортирует:
+ * «по производителю» ничего не находит, а лишь расставляет по алфавиту.
+ */
 function renderAll(root) {
-  const palette = closetColors();
   const list = filteredItems();
+  const set = (field, v) => { filters[field] = v; emit(); };
 
   const noColor = closetItems().filter(i => !(i.colorIds || []).length).length;
-  const pick = v => { filters.color = filters.color === v ? null : v; emit(); };
 
-  const colorRow = h('div', { class: 'palette-row' },
-    h('button', {
-      class: 'swatch', title: 'Сканировать цвет камерой',
-      style: { background: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' },
+  const filterChip = (label, field, key, opts = {}) => {
+    const id = filters[field];
+    const name = id === NO_COLOR ? 'без цвета' : id ? entryName(key, id) : null;
+    return h('button', {
+      class: 'chip' + (name ? ' active' : ''),
       onclick: async () => {
-        const hex = await scanColorFromCamera();
-        const near = hex && nearestColor(hex);
-        if (near) { filters.color = near.id; emit(); }
+        const v = await openListPicker(key, { selected: id, title: label, ...opts });
+        if (v !== null) set(field, v || null);
       }
-    }, '📷'),
-    // вещи без цвета иначе не найти: отдельного места у них нет
-    noColor ? h('button', {
-      class: 'swatch none' + (filters.color === NO_COLOR ? ' sel' : ''),
-      title: `Без цвета · ${noColor}`, onclick: () => pick(NO_COLOR)
-    }, '∅') : null,
-    ...palette.map(c => h('button', {
-      class: 'swatch' + (filters.color === c.id ? ' sel' : '') + (c.n ? '' : ' unused'),
-      style: { background: c.hex }, title: `${c.name}${c.n ? ' · ' + c.n : ''}`,
-      onclick: () => pick(c.id)
-    }))
-  );
-
-  const controls = h('div', { class: 'row', style: { margin: '8px 0 4px' } },
-    h('span', { class: 'small muted spacer' }, nItems(list.length)),
-    filters.color ? h('button', {
-      class: 'chip active', onclick: () => { filters.color = null; emit(); }
     },
-      filters.color === NO_COLOR ? null
-        : h('span', { class: 'dot', style: { background: listEntry('colors', filters.color)?.hex } }),
-      filters.color === NO_COLOR ? 'Без цвета' : listEntry('colors', filters.color)?.name || 'Цвет', ' ✕') : null,
+      id && id !== NO_COLOR && key === 'colors'
+        ? h('span', { class: 'dot', style: { background: listEntry('colors', id)?.hex } }) : null,
+      name ? `${label}: ${name}` : label,
+      name ? h('span', {
+        class: 'x', onclick: e => { e.stopPropagation(); set(field, null); }
+      }, '✕') : null
+    );
+  };
+
+  const filterRow = h('div', { class: 'chips filters' },
+    filterChip('Цвет', 'color', 'colors',
+      noColor ? { first: { id: NO_COLOR, name: 'Без цвета' } } : {}),
+    filterChip('Производитель', 'brand', 'brands'),
+    filterChip('Материал', 'material', 'materials'),
     h('button', {
       class: 'chip' + (filters.favOnly ? ' active' : ''),
-      onclick: () => { filters.favOnly = !filters.favOnly; emit(); }
-    }, '★'),
+      onclick: () => set('favOnly', !filters.favOnly)
+    }, '★ Избранное')
+  );
+
+  const controls = h('div', { class: 'row', style: { margin: '6px 0 4px' } },
+    h('span', { class: 'small muted spacer' }, nItems(list.length)),
     h('select', {
       style: { width: 'auto', padding: '5px 8px', fontSize: '12px' },
-      onchange: e => { filters.sort = e.target.value; emit(); }
+      onchange: e => set('sort', e.target.value)
     },
-      [['new', 'Сначала новые'], ['old', 'Сначала старые'], ['name', 'По производителю'], ['color', 'По цвету']]
+      [['new', 'Сначала новые'], ['old', 'Сначала старые']]
         .map(([v, t]) => h('option', { value: v, selected: filters.sort === v }, t)))
   );
 
-  fill(root, colorRow, controls,
+  fill(root, filterRow, controls,
     list.length ? h('div', { class: 'grid' }, list.map(it => itemTile(it))) : h('div', { class: 'empty' },
       h('div', { class: 'big' }, '🧺'),
       h('p', {}, closetItems().length

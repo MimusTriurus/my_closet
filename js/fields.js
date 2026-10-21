@@ -2,12 +2,25 @@
 // Список настраивается там же, где используется, — отдельного места для
 // справочников нет, как и у подкатегорий.
 import { fill, h, openModal, actionSheet, promptDialog, alertDialog, nItems } from './ui.js';
+import { colorDist } from './color.js';
+import { scanColorFromCamera } from './capture.js';
 import {
   LIST_DEFS, listItems, listEntry, listUsage,
   addListEntry, updateListEntry, deleteListEntry
 } from './state.js';
 
 const sameName = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/** Ближайший цвет палитры к снятому оттенку: камера выбирает, а не заводит. */
+export function nearestColor(hex) {
+  let best = null, bd = 1e9;
+  for (const c of listItems('colors')) {
+    if (!c.hex) continue;
+    const d = colorDist(hex, c.hex);
+    if (d < bd) { bd = d; best = c; }
+  }
+  return best;
+}
 
 /**
  * Новый цвет: название и оттенок. Оттенки с фотографии предлагаются
@@ -96,7 +109,8 @@ async function removeEntry(key, entry) {
  * Возвращает id (single), массив id (multi), '' — снять значение, null — отмена.
  */
 export function openListPicker(key, {
-  selected = null, multi = false, exclude = [], title = null, manage = true, suggest = []
+  selected = null, multi = false, exclude = [], title = null, manage = true, suggest = [],
+  first = null
 } = {}) {
   const def = LIST_DEFS[key];
   return new Promise(res => {
@@ -120,6 +134,11 @@ export function openListPicker(key, {
       const list = listItems(key).filter(e => !exclude.includes(e.id));
       fill(body,
         h('div', { class: 'list' },
+          // особое значение фильтра — «без цвета» и ему подобные
+          first ? h('div', {
+            class: 'lrow' + (first.id === selected ? ' on' : ''),
+            onclick: () => finish(first.id)
+          }, h('div', { class: 't' }, h('b', { class: 'muted' }, first.name))) : null,
           list.map(e => {
             const on = multi ? picked.has(e.id) : e.id === selected;
             return h('div', {
@@ -165,7 +184,17 @@ export function openListPicker(key, {
             if (!e) return render();
             if (multi) { picked.add(e.id); render(); } else finish(e.id);
           }
-        }, '+ ' + def.add) : null
+        }, '+ ' + def.add) : null,
+        // камера подбирает ближайший цвет палитры — заводить новый она не должна
+        key === 'colors' ? h('button', {
+          class: 'btn block', style: { marginTop: '6px' },
+          onclick: async () => {
+            const hex = await scanColorFromCamera();
+            const near = hex && nearestColor(hex);
+            if (!near) return;
+            if (multi) { picked.add(near.id); render(); } else finish(near.id);
+          }
+        }, '📷 Подобрать камерой') : null
       );
     }
     render();

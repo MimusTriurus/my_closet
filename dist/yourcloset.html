@@ -1796,13 +1796,72 @@ function pickItems({ title = 'Выбрать вещи', selected = [], multi = t
   });
 }
 
+/**
+ * Выбор образов. Список плоским быть не может: у образов есть категории
+ * и подкатегории, и когда их станет много, нужный придётся искать глазами.
+ * Поэтому над сеткой — те же папки, но строками фильтров, а не переходами:
+ * внутри окна выбора некуда ставить «назад».
+ */
+const NO_CAT = '__nocat';
+const NO_SUB = '__nosub';
+
 function pickOutfits({ title = 'Выбрать образы', selected = [], multi = true } = {}) {
   return new Promise(res => {
     let sel = new Set(selected);
+    let catId = null, subId = null;
     let done = false;
+
     const grid = h('div', { class: 'grid g2' });
+    const chips = h('div', { class: 'chips' });
+    const subChips = h('div', { class: 'chips' });
+
+    const inCat = id => state.outfits.filter(o => (o.catId || null) === (id === NO_CAT ? null : id));
+
+    function renderChips() {
+      const cats = outfitCats().filter(c => inCat(c.id).length);
+      const loose = inCat(NO_CAT).length;
+      const pick = id => { catId = id; subId = null; renderAll(); };
+
+      fill(chips,
+        h('button', { class: 'chip' + (!catId ? ' active' : ''), onclick: () => pick(null) }, 'Все'),
+        ...cats.map(c => h('button', {
+          class: 'chip' + (catId === c.id ? ' active' : ''), onclick: () => pick(c.id)
+        }, c.name, h('span', { class: 'cnt' }, inCat(c.id).length))),
+        loose ? h('button', {
+          class: 'chip' + (catId === NO_CAT ? ' active' : ''), onclick: () => pick(NO_CAT)
+        }, 'Без категории', h('span', { class: 'cnt' }, loose)) : null
+      );
+
+      // вторая строка — только там, где подкатегории есть и в них что-то лежит
+      const cat = catId && catId !== NO_CAT ? outfitCats().find(c => c.id === catId) : null;
+      const subs = (cat?.subs || []).filter(sb => inCat(cat.id).some(o => o.subId === sb.id));
+      const sublessN = cat ? inCat(cat.id).filter(o => !subs.some(sb => sb.id === o.subId)).length : 0;
+      subChips.hidden = !subs.length;
+      if (!subs.length) return;
+
+      const pickSub = id => { subId = id; renderAll(); };
+      fill(subChips,
+        h('button', { class: 'chip' + (!subId ? ' active' : ''), onclick: () => pickSub(null) }, 'Вся категория'),
+        ...subs.map(sb => h('button', {
+          class: 'chip' + (subId === sb.id ? ' active' : ''), onclick: () => pickSub(sb.id)
+        }, sb.name)),
+        sublessN ? h('button', {
+          class: 'chip' + (subId === NO_SUB ? ' active' : ''), onclick: () => pickSub(NO_SUB)
+        }, 'Другое', h('span', { class: 'cnt' }, sublessN)) : null
+      );
+    }
+
     function renderGrid() {
-      fill(grid, ...state.outfits.map(o => {
+      const cat = catId && catId !== NO_CAT ? outfitCats().find(c => c.id === catId) : null;
+      const subIds = new Set((cat?.subs || []).map(sb => sb.id));
+      const list = state.outfits.filter(o => {
+        if (catId && (o.catId || null) !== (catId === NO_CAT ? null : catId)) return false;
+        if (!subId) return true;
+        const own = subIds.has(o.subId) ? o.subId : null;
+        return subId === NO_SUB ? !own : own === subId;
+      });
+
+      fill(grid, ...list.map(o => {
         // метка видна до выбора — предупреждение потом лишь подстраховывает
         const gone = archivedInOutfit(o).length;
         return h('div', {
@@ -1816,11 +1875,15 @@ function pickOutfits({ title = 'Выбрать образы', selected = [], mul
           gone ? h('span', { class: 'gone-mark', title: 'В образе есть вещь из архива' }, '◷') : null,
           h('span', { class: 'lbl' }, o.name || 'Образ'));
       }));
-      if (!state.outfits.length) fill(grid, h('div', { class: 'empty' }, 'Образов пока нет'));
+      if (!list.length) fill(grid, h('div', { class: 'empty' }, 'Здесь пусто'));
     }
-    renderGrid();
+
+    const renderAll = () => { renderChips(); renderGrid(); };
+    renderAll();
+
     const modal = openModal({
-      title, full: true, body: grid,
+      title, full: true,
+      body: h('div', {}, chips, subChips, grid),
       foot: multi ? [
         h('button', { class: 'btn', onclick: () => modal.close() }, 'Отмена'),
         h('button', { class: 'btn primary', onclick: () => { done = true; modal.close(); res([...sel]); } }, 'Готово')
@@ -3368,7 +3431,7 @@ function renderOutfits(root) {
 // Вкладка «Календарь»: какой образ надет в какой день. Только образы —
 // отдельные вещи сюда не кладутся, иначе у счётчика носок два источника.
 import {
-  fill, h, urlFor, openModal, actionSheet, confirmDialog, iso, fmtDate, pluralWord
+  fill, h, urlFor, openModal, actionSheet, confirmDialog, iso, fmtDate, plural
 } from './ui.js';
 
 let cursor = new Date();
@@ -3497,14 +3560,6 @@ function renderCalendar(root) {
   const prefix = `${y}-${String(m + 1).padStart(2, '0')}`;
   const monthDays = state.calendar.filter(d =>
     d.id.startsWith(prefix) && ((d.outfitIds?.length || 0) + (d.itemIds?.length || 0)));
-  // носка — это день, а не образ: два образа на дне дают вещи одну носку
-  const monthWears = monthDays.reduce((sum, d) => {
-    const ids = new Set(d.itemIds || []);
-    for (const oid of d.outfitIds || []) {
-      for (const l of outfitById(oid)?.layers || []) ids.add(l.itemId);
-    }
-    return sum + [...ids].filter(itemById).length;
-  }, 0);
 
   fill(root, 
     h('div', { class: 'row', style: { marginBottom: '10px' } },
@@ -3512,12 +3567,12 @@ function renderCalendar(root) {
       h('b', { class: 'spacer center', style: { textAlign: 'center' } }, `${MONTHS[m]} ${y}`),
       h('button', { class: 'btn btn-sm', onclick: () => { cursor = new Date(y, m + 1, 1); emit(); } }, '›')
     ),
-    h('div', { class: 'stat-row' },
-      h('div', { class: 'stat' }, h('b', {}, monthDays.length),
-        h('span', {}, pluralWord(monthDays.length, 'день отмечен', 'дня отмечено', 'дней отмечено'))),
-      h('div', { class: 'stat' }, h('b', {}, monthWears),
-        h('span', {}, pluralWord(monthWears, 'надевание за месяц', 'надевания за месяц', 'надеваний за месяц')))
-    ),
+    // одна строка вместо двух крупных цифр: счётчик носок живёт в карточке
+    // вещи, где он что-то решает, а здесь важно только, что месяц не пуст
+    h('p', { class: 'muted small center', style: { margin: '0 0 10px' } },
+      monthDays.length
+        ? plural(monthDays.length, 'день отмечен', 'дня отмечено', 'дней отмечено') + ' в этом месяце'
+        : 'В этом месяце ничего не отмечено'),
     h('div', { class: 'cal-head' }, WD.map(d => h('div', {}, d))),
     h('div', { class: 'cal-grid' }, cells),
     h('button', { class: 'btn block', style: { marginTop: '12px' }, onclick: () => { cursor = new Date(); emit(); } }, 'Сегодня')

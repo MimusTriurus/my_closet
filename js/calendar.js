@@ -1,7 +1,7 @@
 // Вкладка «Календарь»: какой образ надет в какой день. Только образы —
 // отдельные вещи сюда не кладутся, иначе у счётчика носок два источника.
 import {
-  fill, h, urlFor, openModal, actionSheet, confirmDialog, iso, fmtDate, pluralWord
+  fill, h, urlFor, openModal, actionSheet, confirmDialog, iso, fmtDate, plural
 } from './ui.js';
 import { state, saveDay, dayByDate, outfitById, itemById, archivedInOutfit, emit } from './state.js';
 import { pickOutfits } from './picker.js';
@@ -134,14 +134,6 @@ export function renderCalendar(root) {
   const prefix = `${y}-${String(m + 1).padStart(2, '0')}`;
   const monthDays = state.calendar.filter(d =>
     d.id.startsWith(prefix) && ((d.outfitIds?.length || 0) + (d.itemIds?.length || 0)));
-  // носка — это день, а не образ: два образа на дне дают вещи одну носку
-  const monthWears = monthDays.reduce((sum, d) => {
-    const ids = new Set(d.itemIds || []);
-    for (const oid of d.outfitIds || []) {
-      for (const l of outfitById(oid)?.layers || []) ids.add(l.itemId);
-    }
-    return sum + [...ids].filter(itemById).length;
-  }, 0);
 
   fill(root, 
     h('div', { class: 'row', style: { marginBottom: '10px' } },
@@ -149,12 +141,12 @@ export function renderCalendar(root) {
       h('b', { class: 'spacer center', style: { textAlign: 'center' } }, `${MONTHS[m]} ${y}`),
       h('button', { class: 'btn btn-sm', onclick: () => { cursor = new Date(y, m + 1, 1); emit(); } }, '›')
     ),
-    h('div', { class: 'stat-row' },
-      h('div', { class: 'stat' }, h('b', {}, monthDays.length),
-        h('span', {}, pluralWord(monthDays.length, 'день отмечен', 'дня отмечено', 'дней отмечено'))),
-      h('div', { class: 'stat' }, h('b', {}, monthWears),
-        h('span', {}, pluralWord(monthWears, 'надевание за месяц', 'надевания за месяц', 'надеваний за месяц')))
-    ),
+    // одна строка вместо двух крупных цифр: счётчик носок живёт в карточке
+    // вещи, где он что-то решает, а здесь важно только, что месяц не пуст
+    h('p', { class: 'muted small center', style: { margin: '0 0 10px' } },
+      monthDays.length
+        ? plural(monthDays.length, 'день отмечен', 'дня отмечено', 'дней отмечено') + ' в этом месяце'
+        : 'В этом месяце ничего не отмечено'),
     h('div', { class: 'cal-head' }, WD.map(d => h('div', {}, d))),
     h('div', { class: 'cal-grid' }, cells),
     h('button', { class: 'btn block', style: { marginTop: '12px' }, onclick: () => { cursor = new Date(); emit(); } }, 'Сегодня')

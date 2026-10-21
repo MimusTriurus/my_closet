@@ -31,7 +31,7 @@ async function addItems(trip, ids) {
 /** Выбор поездки, из которой копируются вещи (галочки не переносим). */
 function pickTrip(exceptId) {
   return new Promise(res => {
-    const list = state.trips.filter(t => t.id !== exceptId);
+    const list = byNewest(state.trips.filter(t => t.id !== exceptId));
     let done = false;
     const modal = openModal({
       title: 'Из какой поездки',
@@ -185,7 +185,7 @@ function openArchive() {
   const body = h('div', {});
   const modal = openModal({ title: 'Архив поездок', body, full: true, onClose: emit });
   const render = () => {
-    const archived = state.trips.filter(t => t.done);
+    const archived = byNewest(state.trips.filter(t => t.done));
     fill(body, archived.length
       ? h('div', { class: 'list' }, archived.map(tripRow))
       : h('div', { class: 'empty' }, 'Архив пуст'));
@@ -193,9 +193,16 @@ function openArchive() {
   render();
 }
 
+/**
+ * Поездки — сверху новые. Дат у поездки нет, поэтому «новая» означает
+ * «заведена позже». Сортируем при показе, а не полагаемся на то, в каком
+ * порядке они оказались в памяти.
+ */
+const byNewest = list => [...list].sort((a, b) => b.createdAt - a.createdAt);
+
 export function renderPacking(root) {
-  const active = state.trips.filter(t => !t.done);
-  const archived = state.trips.filter(t => t.done);
+  const active = byNewest(state.trips.filter(t => !t.done));
+  const archived = byNewest(state.trips.filter(t => t.done));
 
   fill(root,
     active.length

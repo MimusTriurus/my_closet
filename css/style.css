@@ -31,7 +31,9 @@ img{max-width:100%;display:block}
 }
 #tb-title{
   font-family:var(--font-display);font-size:23px;font-weight:600;
-  margin:0;flex:1;text-align:center;letter-spacing:.01em;
+  margin:0;flex:1;min-width:0;text-align:center;letter-spacing:.01em;
+  /* длинное название не должно разъезжаться на две строки поверх кнопок */
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
 .tb-left,.tb-right{min-width:76px;display:flex;gap:4px;align-items:center}
 .tb-right{justify-content:flex-end}
@@ -124,6 +126,15 @@ main#views{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scro
 .tile .check.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .tile.sel{outline:3px solid var(--accent);outline-offset:-3px}
 .tile .badge{position:absolute;top:5px;left:5px;background:rgba(255,255,255,.9);border-radius:6px;font-size:10px;padding:1px 5px}
+
+/* карточка вещи — отдельный экран: фото во всю ширину, действия под ним */
+.card-photo{
+  width:100%;aspect-ratio:1;border-radius:var(--r);overflow:hidden;
+  display:flex;align-items:center;justify-content:center;margin-bottom:12px
+}
+.card-photo img{width:100%;height:100%;object-fit:contain;padding:10px}
+.card-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}
+.card-actions .btn{flex:1}
 
 /* ---------- color dots ---------- */
 .dots{display:flex;gap:3px}

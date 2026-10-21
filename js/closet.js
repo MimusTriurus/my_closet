@@ -173,45 +173,72 @@ export function openItemForm(item, isNew = false) {
 }
 
 /* ---------- карточка вещи ---------- */
+/* ---------- карточка вещи ---------- */
+/**
+ * Карточка — отдельный экран, а не окно: фотография и есть то, ради чего её
+ * открывают, а в модальном окне она ужата полями. Возврат — тем же «‹»
+ * в верхней панели, что и во всём гардеробе.
+ */
 export function openItemCard(item) {
-  const modal = openModal({
-    title: item.name || 'Вещь',
-    body: h('div', {},
-      h('div', {
-        class: 'tile', style: { aspectRatio: '1', background: bgCss(item.bg), marginBottom: '12px' }
-      }, h('img', { src: urlFor(item.img) })),
-      h('div', { class: 'lrow' },
-        h('div', { class: 't' },
-          h('b', {}, item.name || '—'),
-          h('span', {}, [catById(item.catId)?.name, subById(item.catId, item.subId)?.name].filter(Boolean).join(' › ') || 'Без категории'))
-      ),
-      h('div', { class: 'section-title' }, 'Цвета'),
-      h('div', { class: 'row', style: { gap: '6px', flexWrap: 'wrap' } },
-        (item.colors || []).map(c => h('div', {
-          class: 'chip', onclick: () => { filters.color = c.hex; nav.all = true; nav.catId = null; modal.close(); emit(); }
-        }, h('span', { class: 'dot', style: { background: c.hex } }), colorName(c.hex)))
-      )
-    ),
-    foot: [
+  nav.itemId = item.id;
+  emit();
+}
+
+const closeCard = () => { nav.itemId = null; emit(); };
+
+function renderItemCard(root, item) {
+  const place = [catById(item.catId)?.name, subById(item.catId, item.subId)?.name]
+    .filter(Boolean).join(' › ') || 'Без категории';
+
+  fill(root,
+    h('div', { class: 'card-photo', style: { background: bgCss(item.bg) } },
+      h('img', { src: urlFor(item.img), alt: item.name || '' })),
+
+    h('div', { class: 'lrow' },
+      h('div', { class: 't' },
+        h('b', {}, item.name || '—'),
+        h('span', {}, place))),
+
+    (item.colors || []).length ? h('div', { class: 'section-title' }, 'Цвета') : null,
+    h('div', { class: 'row', style: { gap: '6px', flexWrap: 'wrap' } },
+      (item.colors || []).map(c => h('div', {
+        class: 'chip',
+        onclick: () => {
+          filters.color = c.hex;
+          nav.itemId = null; nav.archive = false; nav.catId = null; nav.subId = null; nav.all = true;
+          emit();
+        }
+      }, h('span', { class: 'dot', style: { background: c.hex } }), colorName(c.hex)))),
+
+    h('div', { class: 'card-actions' },
       h('button', {
         class: 'btn', title: 'В избранное',
-        onclick: async () => { item.fav = !item.fav; await saveItem(item); toast(item.fav ? 'В избранном' : 'Убрано'); modal.close(); }
+        onclick: async () => {
+          item.fav = !item.fav;
+          await saveItem(item);
+          toast(item.fav ? 'В избранном' : 'Убрано');
+        }
       }, item.fav ? '★' : '☆'),
       item.archived
         ? h('button', {
-          class: 'btn', onclick: async () => { modal.close(); await unarchiveItem(item); }
+          class: 'btn', onclick: async () => { closeCard(); await unarchiveItem(item); }
         }, '↩ Из архива')
         : h('button', {
-          class: 'btn', onclick: async () => { if (await archiveItem(item)) modal.close(); }
+          class: 'btn', onclick: async () => { if (await archiveItem(item)) closeCard(); }
         }, '📦 В архив'),
-      h('button', { class: 'btn', onclick: async () => { modal.close(); await openItemForm(item); } }, '✎ Изменить'),
+      h('button', { class: 'btn', onclick: () => openItemForm(item) }, '✎ Изменить'),
       h('button', {
         class: 'btn danger', onclick: async () => {
-          if (await confirmDialog('Удалить вещь из гардероба?')) { await deleteItem(item.id); modal.close(); toast('Удалено'); }
+          if (await confirmDialog('Удалить вещь из гардероба?')) {
+            closeCard();
+            await deleteItem(item.id);
+            toast('Удалено');
+          }
         }
       }, '🗑')
-    ]
-  });
+    )
+  );
+  root.style.paddingBottom = '';
 }
 
 /* ---------- фильтрация ---------- */
@@ -362,10 +389,10 @@ function openSubManager(cat, onDone) {
 export const OTHER = '__other';
 // высота закреплённой строки внизу — должна совпадать с .service-bar в стилях
 const SERVICE_BAR_H = 42;
-export const nav = { all: false, archive: false, catId: null, subId: null };
+export const nav = { all: false, archive: false, catId: null, subId: null, itemId: null };
 
-const goRoot = () => { nav.all = false; nav.archive = false; nav.catId = null; nav.subId = null; emit(); };
-const goArchive = () => { nav.all = false; nav.archive = true; nav.catId = null; nav.subId = null; emit(); };
+const goRoot = () => { nav.all = false; nav.archive = false; nav.catId = null; nav.subId = null; nav.itemId = null; emit(); };
+const goArchive = () => { nav.all = false; nav.archive = true; nav.catId = null; nav.subId = null; nav.itemId = null; emit(); };
 const openCat = id => { nav.catId = id; nav.subId = null; emit(); };
 const openSub = id => { nav.subId = id; emit(); };
 
@@ -397,6 +424,10 @@ const latestIn = (catId, subId, arc) => itemsIn(catId, subId, arc)[0] || null;
 
 /** Что показать в верхней панели: заголовок раздела и кнопку «назад». */
 export function closetNav() {
+  if (nav.itemId) {
+    const it = itemById(nav.itemId);
+    if (it) return { title: it.name || 'Вещь', back: closeCard };
+  }
   if (nav.all) return { title: 'Все вещи', back: goRoot };
   if (nav.archive && !nav.catId) return { title: 'Архив вещей', back: goRoot };
   if (nav.archive && nav.catId === OTHER) return { title: 'Другое', back: goArchive };
@@ -795,6 +826,12 @@ function renderAll(root) {
 }
 
 export function renderCloset(root) {
+  // карточка вещи лежит поверх любого раздела: возврат ведёт туда, откуда открыли
+  if (nav.itemId) {
+    const it = itemById(nav.itemId);
+    if (it) return renderItemCard(root, it);
+    nav.itemId = null;
+  }
   if (nav.all) return renderAll(root);
   if (nav.archive && !nav.catId) return renderArchiveRoot(root);
   // «Другое» существует, только пока в нём что-то есть: разложили всё —

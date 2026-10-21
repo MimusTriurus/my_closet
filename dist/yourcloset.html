@@ -288,6 +288,10 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent-soft);bor
 }
 .lrow .chev{color:var(--muted);font-size:22px;line-height:1;padding-right:2px}
 .lrow .chev.back{padding:0 4px 0 0}
+/* стрелки порядка категорий */
+.lrow .ord{display:flex;flex-direction:column;gap:2px;flex:0 0 auto}
+.lrow .ord .btn{padding:1px 7px;font-size:12px;line-height:1.3;min-width:0}
+.lrow .ord .btn[disabled]{opacity:.25}
 /* мозаика из четырёх последних вещей — миниатюра раздела «Все вещи» */
 .lrow .thumb.grid4{
   display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:1fr;gap:1px;
@@ -1105,7 +1109,9 @@ const archivedItems = () => state.items.filter(i => i.archived);
 const SCOPE_CLOSET = 'closet';
 const SCOPE_ARCHIVE = 'archive';
 const SCOPE_OUTFIT = 'outfit';
-const catsIn = scope => state.cats.filter(c => (c.scope || SCOPE_CLOSET) === scope);
+const catsIn = scope => state.cats
+  .filter(c => (c.scope || SCOPE_CLOSET) === scope)
+  .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 const closetCats = () => catsIn(SCOPE_CLOSET);
 const archiveCats = () => catsIn(SCOPE_ARCHIVE);
 const outfitCats = () => catsIn(SCOPE_OUTFIT);
@@ -1187,6 +1193,27 @@ async function deleteCat(id) {
   emit();
 }
 const catById = id => state.cats.find(c => c.id === id);
+
+/**
+ * Порядок категорий задаёт пользователь: ни алфавит, ни дата создания не
+ * угадывают, что для него сейчас важнее. Номера переписываются подряд,
+ * чтобы порядок не зависел от того, какие значения накопились раньше.
+ */
+async function moveCat(list, id, dir) {
+  const i = list.findIndex(c => c.id === id);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= list.length) return false;
+  const next = [...list];
+  next.splice(j, 0, next.splice(i, 1)[0]);
+  for (let k = 0; k < next.length; k++) next[k].order = k;
+  for (const c of next) await dbPut('cats', c);
+  emit();
+  return true;
+}
+
+/** Новая категория встаёт первой: только что заведённая — обычно и нужная. */
+const nextCatOrder = list =>
+  (list.length ? Math.min(...list.map(c => c.order ?? 0)) : 0) - 1;
 function subById(catId, subId) {
   return catById(catId)?.subs.find(s => s.id === subId) || null;
 }
@@ -2625,11 +2652,13 @@ function navRow({ thumb, thumbNode, title, note, muted, onclick }) {
  * Миниатюра «Всех вещей» — мозаика из четырёх последних добавленных.
  * Одна фотография повторяла бы картинку соседней строки.
  */
-function collageThumb(items) {
-  const four = items.slice(0, 4);
+/** Мозаика из четырёх последних. pic — где лежит картинка: у вещи это img,
+ *  у образа preview, поэтому источник передаётся снаружи. */
+function collageThumb(list, pic = it => it.img) {
+  const four = list.slice(0, 4);
   if (!four.length) return h('div', { class: 'thumb ph' });
   return h('div', { class: 'thumb grid4' },
-    four.map(it => h('img', { src: urlFor(it.img), style: { background: bgCss(it.bg) } })));
+    four.map(it => h('img', { src: urlFor(pic(it)), style: { background: bgCss(it.bg) } })));
 }
 
 /** Закреплённая внизу строка: рабочие полки, которые не должны уезжать. */
@@ -3393,7 +3422,7 @@ function renderOutfitRoot(root) {
   fill(root,
     h('div', { class: 'list' },
       navRow({
-        thumbNode: collageThumb(state.outfits), title: 'Все образы',
+        thumbNode: collageThumb(state.outfits, o => o.preview), title: 'Все образы',
         note: nOutfits(state.outfits.length),
         onclick: () => { nav.all = true; emit(); }
       }),

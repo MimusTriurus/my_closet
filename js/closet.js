@@ -698,11 +698,13 @@ export function navRow({ thumb, thumbNode, title, note, muted, onclick }) {
  * Миниатюра «Всех вещей» — мозаика из четырёх последних добавленных.
  * Одна фотография повторяла бы картинку соседней строки.
  */
-export function collageThumb(items) {
-  const four = items.slice(0, 4);
+/** Мозаика из четырёх последних. pic — где лежит картинка: у вещи это img,
+ *  у образа preview, поэтому источник передаётся снаружи. */
+export function collageThumb(list, pic = it => it.img) {
+  const four = list.slice(0, 4);
   if (!four.length) return h('div', { class: 'thumb ph' });
   return h('div', { class: 'thumb grid4' },
-    four.map(it => h('img', { src: urlFor(it.img), style: { background: bgCss(it.bg) } })));
+    four.map(it => h('img', { src: urlFor(pic(it)), style: { background: bgCss(it.bg) } })));
 }
 
 /** Закреплённая внизу строка: рабочие полки, которые не должны уезжать. */

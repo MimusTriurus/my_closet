@@ -2,7 +2,7 @@
 // архив вещей и образы. У каждого свой список, свои счётчики и свои
 // миниатюры, поэтому пространство описывается объектом и передаётся сюда.
 import { fill, h, openModal, confirmDialog, promptDialog, actionSheet, alertDialog, plural } from './ui.js';
-import { state, saveCat, deleteCat, catsIn, countIn } from './state.js';
+import { saveCat, deleteCat, catsIn, countIn, moveCat, nextCatOrder } from './state.js';
 import { uid } from './db.js';
 
 const nSubs = n => plural(n, 'подкатегория', 'подкатегории', 'подкатегорий');
@@ -17,13 +17,25 @@ export function openCategoryManager(space) {
   openModal({ title: space.title, body, full: true });
 
   function render() {
+    const list = space.cats();
     fill(body,
-      ...space.cats().map(c => h('div', { class: 'lrow' },
+      ...list.map((c, i) => h('div', { class: 'lrow' },
         // та же миниатюра, что и в списке разделов: фотография, а не пиктограмма
         space.thumb(c),
         h('div', { class: 't' },
           h('b', {}, c.name),
           h('span', {}, `${space.n(countIn(c))} · ${nSubs(c.subs.length)}`)),
+        // порядок меняется стрелками: на телефоне перетаскивание ненадёжно,
+        // а список категорий короткий
+        h('div', { class: 'ord' },
+          h('button', {
+            class: 'btn btn-sm', disabled: i === 0,
+            onclick: async () => { if (await moveCat(list, c.id, -1)) render(); }
+          }, '↑'),
+          h('button', {
+            class: 'btn btn-sm', disabled: i === list.length - 1,
+            onclick: async () => { if (await moveCat(list, c.id, 1)) render(); }
+          }, '↓')),
         h('button', {
           class: 'btn btn-sm', onclick: async () => {
             const act = await actionSheet(c.name, [
@@ -52,7 +64,7 @@ export function openCategoryManager(space) {
           const n = await promptDialog('Новая категория');
           if (!n) return;
           await saveCat({
-            id: uid('c'), name: n, order: state.cats.length,
+            id: uid('c'), name: n, order: nextCatOrder(space.cats()),
             custom: true, scope: space.scope, subs: []
           });
           render();

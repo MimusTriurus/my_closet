@@ -349,7 +349,9 @@ export const archivedItems = () => state.items.filter(i => i.archived);
 export const SCOPE_CLOSET = 'closet';
 export const SCOPE_ARCHIVE = 'archive';
 export const SCOPE_OUTFIT = 'outfit';
-export const catsIn = scope => state.cats.filter(c => (c.scope || SCOPE_CLOSET) === scope);
+export const catsIn = scope => state.cats
+  .filter(c => (c.scope || SCOPE_CLOSET) === scope)
+  .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 export const closetCats = () => catsIn(SCOPE_CLOSET);
 export const archiveCats = () => catsIn(SCOPE_ARCHIVE);
 export const outfitCats = () => catsIn(SCOPE_OUTFIT);
@@ -431,6 +433,27 @@ export async function deleteCat(id) {
   emit();
 }
 export const catById = id => state.cats.find(c => c.id === id);
+
+/**
+ * Порядок категорий задаёт пользователь: ни алфавит, ни дата создания не
+ * угадывают, что для него сейчас важнее. Номера переписываются подряд,
+ * чтобы порядок не зависел от того, какие значения накопились раньше.
+ */
+export async function moveCat(list, id, dir) {
+  const i = list.findIndex(c => c.id === id);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= list.length) return false;
+  const next = [...list];
+  next.splice(j, 0, next.splice(i, 1)[0]);
+  for (let k = 0; k < next.length; k++) next[k].order = k;
+  for (const c of next) await dbPut('cats', c);
+  emit();
+  return true;
+}
+
+/** Новая категория встаёт первой: только что заведённая — обычно и нужная. */
+export const nextCatOrder = list =>
+  (list.length ? Math.min(...list.map(c => c.order ?? 0)) : 0) - 1;
 export function subById(catId, subId) {
   return catById(catId)?.subs.find(s => s.id === subId) || null;
 }

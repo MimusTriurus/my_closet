@@ -476,7 +476,7 @@ function renderOutfitRoot(root) {
   fill(root,
     h('div', { class: 'list' },
       navRow({
-        thumbNode: collageThumb(state.outfits), title: 'Все образы',
+        thumbNode: collageThumb(state.outfits, o => o.preview), title: 'Все образы',
         note: nOutfits(state.outfits.length),
         onclick: () => { nav.all = true; emit(); }
       }),

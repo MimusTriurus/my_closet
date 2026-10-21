@@ -54,14 +54,18 @@ function openDay(dateStr) {
 
     fill(body,
       h('button', {
+        // по одному: нажатие на образ и есть выбор. Несколько образов на день
+        // бывают, но редко — ради них незачем просить «Готово» каждый раз
         class: 'btn primary block', onclick: async () => {
-          const ids = await pickOutfits({ selected: day.outfitIds, title: 'Образы на день' });
-          if (!ids) return;
-          day.outfitIds = await vetOutfits(dateStr, ids, day.outfitIds || []);
+          const picked = await pickOutfits({ title: 'Выбрать образ', multi: false });
+          if (!picked) return;
+          const before = day.outfitIds || [];
+          const ids = [...new Set([...before, ...picked])];
+          day.outfitIds = await vetOutfits(dateStr, ids, before);
           await saveDay(day);
           render();
         }
-      }, '👗 Выбрать образы'),
+      }, outfits.length ? '👗 Добавить образ' : '👗 Выбрать образ'),
 
       outfits.length ? h('div', { class: 'section-title' }, 'Надето') : null,
       outfits.length ? h('div', { class: 'grid g2' }, outfits.map(o => {

@@ -1,5 +1,7 @@
 // Редактор изображения вещи: ML-удаление фона + ручные инструменты (волшебная палочка,
 // ластик, восстановление, прямоугольный и свободный кроп).
+// Снимок можно увеличить — щипком, колесом или кнопками; это нужно ластику,
+// которым убирают мелочь вроде вешалки или травинки под подолом.
 import { fill, h, qs, openModal, toast, busy } from './ui.js';
 
 const IMGLY_URL = 'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.8/+esm';
@@ -91,7 +93,65 @@ export async function openImageEditor(source, { autoAI = false } = {}) {
 
   /* ---------- разметка ---------- */
   const canvas = h('canvas', { id: 'ed-canvas' });
-  const wrap = h('div', { id: 'ed-wrap' }, canvas);
+
+  /* ---------- масштаб ----------
+   * Мелкую деталь на вписанном в экран снимке не стереть: один «пиксель»
+   * пальца — это несколько пикселей изображения, и промах неизбежен.
+   * Уменьшением кисти это не лечится — кисть упирается в точность пальца,
+   * а не в свой размер. Лечится увеличением.
+   *
+   * Увеличение **только видимое**: холст и все инструменты продолжают
+   * работать в пикселях изображения. Ничего пересчитывать не пришлось —
+   * toWork() считает по видимому прямоугольнику холста, а тот уже учитывает
+   * любое преобразование.
+   */
+  const ZOOM_MIN = 1, ZOOM_MAX = 8;
+  let zoom = 1, panX = 0, panY = 0;
+  const zoomLbl = h('b', {}, '100%');
+
+  /** Не даём утащить снимок за край: вернуться к нему было бы нечем. */
+  function clampPan() {
+    const mx = Math.max(0, (canvas.offsetWidth * zoom - wrap.clientWidth) / 2);
+    const my = Math.max(0, (canvas.offsetHeight * zoom - wrap.clientHeight) / 2);
+    panX = Math.min(mx, Math.max(-mx, panX));
+    panY = Math.min(my, Math.max(-my, panY));
+  }
+
+  function applyView() {
+    clampPan();
+    canvas.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+    zoomLbl.textContent = Math.round(zoom * 100) + '%';
+  }
+
+  /** Масштаб вокруг точки экрана: то, что под пальцем, под ним и остаётся. */
+  function zoomAt(next, cx, cy) {
+    next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next));
+    const r = wrap.getBoundingClientRect();
+    const vx = (cx - (r.left + r.width / 2) - panX) / zoom;
+    const vy = (cy - (r.top + r.height / 2) - panY) / zoom;
+    panX = cx - (r.left + r.width / 2) - next * vx;
+    panY = cy - (r.top + r.height / 2) - next * vy;
+    zoom = next;
+    applyView();
+  }
+
+  const wrapCenter = () => {
+    const r = wrap.getBoundingClientRect();
+    return [r.left + r.width / 2, r.top + r.height / 2];
+  };
+  const stepZoom = k => zoomAt(zoom * k, ...wrapCenter());
+  const resetView = () => { zoom = 1; panX = panY = 0; applyView(); };
+
+  // кнопки поверх холста: на телефоне есть щипок, но на нём свет клином не
+  // сошёлся — мышью и одним пальцем тоже надо уметь
+  const zoomBar = h('div', { class: 'zoom-bar' },
+    h('button', { class: 'zb', title: 'Мельче', onclick: () => stepZoom(1 / 1.6) }, '−'),
+    zoomLbl,
+    h('button', { class: 'zb', title: 'Крупнее', onclick: () => stepZoom(1.6) }, '+'),
+    h('button', { class: 'zb wide', title: 'Вписать целиком', onclick: resetView }, '1:1')
+  );
+
+  const wrap = h('div', { id: 'ed-wrap' }, canvas, zoomBar);
   const opts = h('div', { class: 'tool-opts' });
   const toolbar = h('div', { class: 'tools' });
 
@@ -129,7 +189,7 @@ export async function openImageEditor(source, { autoAI = false } = {}) {
       opts.append(lbl, r, h('div', { class: 'muted small' }, 'Нажмите на фон — область удалится.'));
     } else if (tool === 'erase' || tool === 'restore') {
       const lbl = h('div', { class: 'muted small' }, `Кисть: ${brush} px`);
-      opts.append(lbl, h('input', { type: 'range', min: 6, max: 140, value: brush, oninput: e => { brush = +e.target.value; lbl.textContent = `Кисть: ${brush} px`; } }));
+      opts.append(lbl, h('input', { type: 'range', min: 2, max: 140, value: brush, oninput: e => { brush = +e.target.value; lbl.textContent = `Кисть: ${brush} px`; } }));
     } else if (tool === 'crop') {
       opts.append(h('div', { class: 'row' },
         h('span', { class: 'muted small spacer' }, 'Выделите прямоугольник'),
@@ -201,7 +261,52 @@ export async function openImageEditor(source, { autoAI = false } = {}) {
 
   let drawing = false, last = null, startPt = null;
 
+  // Пальцы на холсте. Один — инструмент, два — щипок: иначе рисование и
+  // перемещение подрались бы за одно и то же движение.
+  const pts = new Map();
+  let pinch = null;
+
+  /**
+   * Второй палец отменяет уже начатый мазок. Без этого каждый щипок оставлял
+   * бы точку в том месте, где человек просто коснулся экрана первым пальцем.
+   */
+  function cancelStroke() {
+    if (!drawing) return;
+    drawing = false; last = null;
+    if (tool === 'crop') { cropRect = null; render(); return; }
+    undo();   // ластик, восстановление и лассо успели записать шаг в историю
+  }
+
+  function startPinch() {
+    const [a, b] = [...pts.values()];
+    pinch = {
+      dist: Math.hypot(b.x - a.x, b.y - a.y) || 1,
+      mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2,
+      zoom, panX, panY
+    };
+  }
+
+  function movePinch() {
+    const [a, b] = [...pts.values()];
+    const dist = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, pinch.zoom * dist / pinch.dist));
+    const r = wrap.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    // точка снимка, что была под серединой между пальцами, остаётся под ней
+    const vx = (pinch.mx - cx - pinch.panX) / pinch.zoom;
+    const vy = (pinch.my - cy - pinch.panY) / pinch.zoom;
+    panX = mx - cx - next * vx;
+    panY = my - cy - next * vy;
+    zoom = next;
+    applyView();
+  }
+
   canvas.addEventListener('pointerdown', e => {
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 2) { cancelStroke(); startPinch(); return; }
+    if (pts.size > 2) return;
+
     try { canvas.setPointerCapture(e.pointerId); } catch (_) { }
     const p = toWork(e);
     if (tool === 'wand') { pushHistory(); magicWand(p.x | 0, p.y | 0); render(); return; }
@@ -212,6 +317,10 @@ export async function openImageEditor(source, { autoAI = false } = {}) {
   });
 
   canvas.addEventListener('pointermove', e => {
+    if (pts.has(e.pointerId)) pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch) { if (pts.size >= 2) movePinch(); return; }
+    if (pts.size > 1) return;
+
     const p = toWork(e);
     hoverPt = p;
     if (!drawing) { if (tool === 'erase' || tool === 'restore') render(); return; }
@@ -226,11 +335,28 @@ export async function openImageEditor(source, { autoAI = false } = {}) {
     }
   });
 
-  canvas.addEventListener('pointerup', () => {
+  function endPointer(e) {
+    pts.delete(e.pointerId);
+    if (pinch) {
+      // пока палец на экране один, щипок не возобновляем: оставшийся палец
+      // не должен внезапно начать рисовать с середины жеста
+      if (!pts.size) pinch = null;
+      drawing = false; last = null;
+      return;
+    }
     if (drawing && tool === 'lasso' && lassoPts && lassoPts.length > 4) applyLasso();
     drawing = false; last = null;
-  });
+  }
+
+  canvas.addEventListener('pointerup', endPointer);
+  canvas.addEventListener('pointercancel', endPointer);
   canvas.addEventListener('pointerleave', () => { hoverPt = null; render(); });
+
+  // мышью — колесом: на компьютере щипка нет
+  wrap.addEventListener('wheel', e => {
+    e.preventDefault();
+    zoomAt(zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15), e.clientX, e.clientY);
+  }, { passive: false });
 
   /* ---------- инструменты ---------- */
   function paint(from, to) {
@@ -294,7 +420,7 @@ export async function openImageEditor(source, { autoAI = false } = {}) {
       out.width, out.height, 0, 0, out.width, out.height);
     work = out;
     cropRect = null;
-    render();
+    render(); resetView();
   }
 
   function applyLasso() {
@@ -357,7 +483,7 @@ export async function openImageEditor(source, { autoAI = false } = {}) {
     work.width = W; work.height = H;
     work.getContext('2d', { willReadFrequently: true }).drawImage(orig, 0, 0);
     cropRect = null; lassoPts = null;
-    render();
+    render(); resetView();
   }
 
   async function finish() {
@@ -369,7 +495,7 @@ export async function openImageEditor(source, { autoAI = false } = {}) {
     r(blob);
   }
 
-  renderToolbar(); renderOpts(); render(); updateChrome();
+  renderToolbar(); renderOpts(); render(); updateChrome(); applyView();
   if (autoAI) setTimeout(runAI, 120);
 
   return new Promise(res => { resolveFn = res; });

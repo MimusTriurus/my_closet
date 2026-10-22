@@ -225,9 +225,51 @@ export function openItemForm(item, isNew = false) {
     }
     fillSubs();
 
+    // Фотография правится отдельно от полей, но применяется вместе с ними:
+    // пока форма открыта, «Отмена» обязана вернуть прежний снимок.
+    let img = item.img;
+    let colors = item.colors || [];
+
     const preview = h('div', {
-      class: 'tile', style: { aspectRatio: '1', maxWidth: '190px', margin: '0 auto 12px', background: bgCss(item.bg) }
-    }, h('img', { src: urlFor(item.img) }));
+      class: 'tile pick-photo', title: 'Изменить фотографию',
+      style: { aspectRatio: '1', maxWidth: '190px', margin: '0 auto 12px', background: bgCss(item.bg) },
+      onclick: () => photoMenu()
+    }, h('img', { src: urlFor(img) }));
+
+    async function applyPhoto(blob) {
+      img = blob;
+      preview.querySelector('img').src = urlFor(blob);
+      try {
+        colors = extractPalette(await imageFromBlob(blob), 5);
+        // подсказки для новых цветов палитры берём уже с нового снимка
+        suggest.splice(0, suggest.length, ...colors.map(c => c.hex));
+      } catch (e) { console.warn(e); }
+    }
+
+    /**
+     * Замена фотографии и переобработка — одно место: это две операции над
+     * одним и тем же, и разводить их по разным кнопкам значит заставлять
+     * выбирать до того, как человек увидел снимок.
+     */
+    async function photoMenu() {
+      const act = await actionSheet('Фотография', [
+        { id: 'cam', icon: '📸', label: 'Снять заново' },
+        { id: 'file', icon: '🖼', label: 'Выбрать из галереи' },
+        { id: 'crop', icon: '✂️', label: 'Переобработать текущую' }
+      ]);
+      if (!act) return;
+      if (act === 'crop') {
+        const blob = await openImageEditor(img, { autoAI: false });
+        if (blob) await applyPhoto(blob);
+        return;
+      }
+      const src = act === 'cam' ? await captureFromCamera() : await pickImageFile();
+      if (!src) return;
+      // новый снимок проходит тот же путь, что и при добавлении вещи:
+      // та же обрезка и то же удаление фона
+      const blob = await openImageEditor(src, { autoAI: true });
+      if (blob) await applyPhoto(blob);
+    }
 
     const bgRow = h('div', { class: 'palette-row' }, BGS.map(b =>
       h('button', {
@@ -267,14 +309,8 @@ export function openItemForm(item, isNew = false) {
           h('div', { class: 'row' }, priceInput, curInput)),
         h('label', { class: 'field' }, h('span', {}, 'Комментарий'), noteInput),
         h('button', {
-          class: 'btn block', style: { marginTop: '14px' }, onclick: async () => {
-            const blob = await openImageEditor(item.img, { autoAI: false });
-            if (!blob) return;
-            item.img = blob;
-            preview.querySelector('img').src = urlFor(blob);
-            try { item.colors = extractPalette(await imageFromBlob(blob), 5); } catch (e) { }
-          }
-        }, '✂️ Переобработать фото')
+          class: 'btn block', style: { marginTop: '14px' }, onclick: () => photoMenu()
+        }, '🖼 Изменить фотографию')
       ),
       foot: [
         h('button', { class: 'btn', onclick: () => modal.close() }, 'Отмена'),
@@ -295,6 +331,8 @@ export function openItemForm(item, isNew = false) {
               ? { value: price, cur: curInput.value.trim() || lastCurrency() }
               : null;
             item.note = noteInput.value.trim();
+            item.img = img;
+            item.colors = colors;
             await saveItem(item);
             resolved = true;
             modal.close();

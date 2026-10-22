@@ -2806,20 +2806,19 @@ function renderRoot(root) {
     .sort((a, b) => order.indexOf(a.system) - order.indexOf(b.system));
   const rest = cats.filter(c => !c.system).sort((a, b) => a.order - b.order);
   const archived = archivedItems().length;
-  // полоска нужна и при пустом архиве, если категории в нём уже заведены —
-  // иначе до них будет не добраться
-  const hasArchive = archived || archiveCats().length;
 
   // «Сортировка», «На рассмотрении» и архив — рабочие полки, а не гардероб.
-  // Они закреплены внизу: при листании категорий их место не меняется
+  // Они закреплены внизу: при листании категорий их место не меняется.
+  // Архив показывается всегда, даже пустой: это часть устройства гардероба,
+  // а не следствие того, что в нём что-то лежит. Полка, появляющаяся только
+  // после первой архивации, читается как пропажа — и о самой возможности
+  // убрать вещь, не удаляя, узнать неоткуда.
   const bars = [
     ...system.map(c => serviceBar({
       icon: c.icon, title: c.name, count: countInCat(c.id), onclick: () => openCat(c.id)
     })),
-    hasArchive ? serviceBar({
-      icon: '📦', title: 'Архив вещей', count: archived, onclick: goArchive
-    }) : null
-  ].filter(Boolean);
+    serviceBar({ icon: '📦', title: 'Архив вещей', count: archived, onclick: goArchive })
+  ];
   const barsH = bars.length * SERVICE_BAR_H + 1;
 
   fill(root,

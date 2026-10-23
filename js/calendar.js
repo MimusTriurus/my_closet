@@ -1,7 +1,7 @@
 // Вкладка «Календарь»: какой образ надет в какой день. Только образы —
 // отдельные вещи сюда не кладутся, иначе у счётчика носок два источника.
 import {
-  fill, h, urlFor, openModal, actionSheet, confirmDialog, iso, fmtDate, plural
+  fill, h, urlFor, actionSheet, confirmDialog, iso, fmtDate, plural
 } from './ui.js';
 import { state, saveDay, dayByDate, outfitById, itemById, archivedInOutfit, emit } from './state.js';
 import { pickOutfits } from './picker.js';
@@ -9,8 +9,18 @@ import { askArchivedInDay, copyOutfit } from './outfits.js';
 import { bgCss } from './bgs.js';
 
 let cursor = new Date();
-/** Повторное нажатие на вкладку возвращает календарь к сегодняшнему месяцу. */
-export const goCalendarHome = () => { cursor = new Date(); emit(); };
+// день — содержимое вкладки, а не инструмент над ней, поэтому он уровень
+// внутри календаря, а не окно с «✕»: отменять в нём нечего, всё пишется сразу
+let openDate = null;
+
+/** Повторное нажатие на вкладку: закрыть день и вернуться к текущему месяцу. */
+export const goCalendarHome = () => { cursor = new Date(); openDate = null; emit(); };
+const closeDay = () => { openDate = null; emit(); };
+
+/** Что показать в верхней панели: день или ничего (тогда заголовок вкладки). */
+export function calendarNav() {
+  return openDate ? { title: fmtDate(openDate), back: closeDay } : null;
+}
 const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль',
   'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
@@ -37,79 +47,78 @@ async function vetOutfits(dateStr, ids, before) {
   return out;
 }
 
-function openDay(dateStr) {
+function renderDay(root, dateStr) {
   const day = dayByDate(dateStr) || { id: dateStr, outfitIds: [], itemIds: [] };
-  const body = h('div', {});
-  openModal({ title: fmtDate(dateStr), body, full: true });
 
   async function dropOutfit(id) {
     day.outfitIds = (day.outfitIds || []).filter(x => x !== id);
-    await saveDay(day);
-    render();
+    await saveDay(day);           // saveDay перерисует вкладку сам
   }
 
-  function render() {
-    const outfits = (day.outfitIds || []).map(outfitById).filter(Boolean);
-    // отдельные вещи в календарь больше не кладутся — только образы, иначе
-    // у счётчика носок два источника. Но то, что уже записано, не прячем
-    const legacy = (day.itemIds || []).map(itemById).filter(Boolean);
+  const outfits = (day.outfitIds || []).map(outfitById).filter(Boolean);
+  // отдельные вещи в календарь больше не кладутся — только образы, иначе
+  // у счётчика носок два источника. Но то, что уже записано, не прячем
+  const legacy = (day.itemIds || []).map(itemById).filter(Boolean);
 
-    fill(body,
-      h('button', {
-        // по одному: нажатие на образ и есть выбор. Несколько образов на день
-        // бывают, но редко — ради них незачем просить «Готово» каждый раз
-        class: 'btn primary block', onclick: async () => {
-          const picked = await pickOutfits({ title: 'Выбрать образ', multi: false });
-          if (!picked) return;
-          const before = day.outfitIds || [];
-          const ids = [...new Set([...before, ...picked])];
-          day.outfitIds = await vetOutfits(dateStr, ids, before);
-          await saveDay(day);
-          render();
-        }
-      }, outfits.length ? '👗 Добавить образ' : '👗 Выбрать образ'),
+  fill(root,
+    h('button', {
+      // по одному: нажатие на образ и есть выбор. Несколько образов на день
+      // бывают, но редко — ради них незачем просить «Готово» каждый раз
+      class: 'btn primary block', onclick: async () => {
+        const picked = await pickOutfits({ title: 'Выбрать образ', multi: false });
+        if (!picked) return;
+        const before = day.outfitIds || [];
+        const ids = [...new Set([...before, ...picked])];
+        day.outfitIds = await vetOutfits(dateStr, ids, before);
+        await saveDay(day);
+      }
+    }, outfits.length ? '👗 Добавить образ' : '👗 Выбрать образ'),
 
-      outfits.length ? h('div', { class: 'section-title' }, 'Надето') : null,
-      outfits.length ? h('div', { class: 'grid g2' }, outfits.map(o => {
-        const gone = archivedInOutfit(o).length;
-        return h('div', {
-          class: 'tile' + (gone ? ' has-gone' : ''), style: { background: bgCss(o.bg) },
-          onclick: async () => {
-            const act = await actionSheet(o.name || 'Образ', [
-              { id: 'drop', icon: '✕', label: 'Убрать с этого дня' }
-            ]);
-            if (act === 'drop') dropOutfit(o.id);
-          }
-        },
-          h('img', { src: urlFor(o.preview) }),
-          gone ? h('span', { class: 'gone-mark', title: 'В образе есть вещь из архива' }, '◷') : null,
-          h('span', { class: 'lbl' }, o.name || 'Образ'));
-      })) : null,
-
-      legacy.length ? h('div', { class: 'section-title' }, 'Вещи из старых записей') : null,
-      legacy.length ? h('p', { class: 'muted small', style: { margin: '0 0 8px' } },
-        'Отдельные вещи в календарь больше не добавляются — только образы.') : null,
-      legacy.length ? h('div', { class: 'grid' }, legacy.map(it => h('div', {
-        class: 'tile', style: { background: bgCss(it.bg) },
+    outfits.length ? h('div', { class: 'section-title' }, 'Надето') : null,
+    outfits.length ? h('div', { class: 'grid g2' }, outfits.map(o => {
+      const gone = archivedInOutfit(o).length;
+      return h('div', {
+        class: 'tile' + (gone ? ' has-gone' : ''), style: { background: bgCss(o.bg) },
         onclick: async () => {
-          if (!await confirmDialog('Убрать вещь с этого дня?', 'Убрать')) return;
-          day.itemIds = (day.itemIds || []).filter(x => x !== it.id);
-          await saveDay(day);
-          render();
+          const act = await actionSheet(o.name || 'Образ', [
+            { id: 'drop', icon: '✕', label: 'Убрать с этого дня' }
+          ]);
+          if (act === 'drop') dropOutfit(o.id);
         }
-      }, h('img', { src: urlFor(it.img) })))) : null,
+      },
+        h('img', { src: urlFor(o.preview) }),
+        gone ? h('span', { class: 'gone-mark', title: 'В образе есть вещь из архива' }, '◷') : null,
+        h('span', { class: 'lbl' }, o.name || 'Образ'));
+    })) : null,
 
-      (!outfits.length && !legacy.length)
-        ? h('div', { class: 'empty' },
-          h('div', { class: 'big' }, '📅'),
-          h('p', {}, 'На этот день ничего не отмечено.'))
-        : null
-    );
-  }
-  render();
+    legacy.length ? h('div', { class: 'section-title' }, 'Вещи из старых записей') : null,
+    legacy.length ? h('p', { class: 'muted small', style: { margin: '0 0 8px' } },
+      'Отдельные вещи в календарь больше не добавляются — только образы.') : null,
+    legacy.length ? h('div', { class: 'grid' }, legacy.map(it => h('div', {
+      class: 'tile', style: { background: bgCss(it.bg) },
+      onclick: async () => {
+        if (!await confirmDialog('Убрать вещь с этого дня?', 'Убрать')) return;
+        day.itemIds = (day.itemIds || []).filter(x => x !== it.id);
+        await saveDay(day);
+      }
+    }, h('img', { src: urlFor(it.img) })))) : null,
+
+    (!outfits.length && !legacy.length)
+      ? h('div', { class: 'empty' },
+        h('div', { class: 'big' }, '📅'),
+        h('p', {}, 'На этот день ничего не отмечено.'))
+      : null
+  );
+
+  root.style.paddingBottom = '';
 }
 
 export function renderCalendar(root) {
+  if (openDate) return renderDay(root, openDate);
+  renderMonth(root);
+}
+
+function renderMonth(root) {
   const y = cursor.getFullYear(), m = cursor.getMonth();
   const first = new Date(y, m, 1);
   const startShift = (first.getDay() + 6) % 7;           // неделя с понедельника
@@ -127,7 +136,7 @@ export function renderCalendar(root) {
     const total = (rec?.outfitIds?.length || 0) + (rec?.itemIds?.length || 0);
     cells.push(h('div', {
       class: 'cal-cell' + (dayNum < 1 || dayNum > daysInMonth ? ' out' : '') + (ds === todayIso ? ' today' : ''),
-      onclick: () => openDay(ds)
+      onclick: () => { openDate = ds; emit(); }
     },
       h('div', { class: 'd' }, date.getDate()),
       h('div', { class: 'pv' },

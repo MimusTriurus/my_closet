@@ -202,7 +202,7 @@ export async function openImageEditor(source, { autoAI = false } = {}) {
   const doneBtn = h('button', { class: 'btn primary', onclick: finish }, 'Готово');
   let resolveFn;
   const modal = openModal({
-    title: 'Обработка фото',
+    title: 'Обработка снимка',
     full: true,
     body: h('div', { style: { display: 'flex', flexDirection: 'column', height: '100%', margin: '-12px' } }, wrap, opts, toolbar),
     foot: [h('button', { class: 'btn', onclick: () => { modal.close(); } }, 'Отмена'), doneBtn],

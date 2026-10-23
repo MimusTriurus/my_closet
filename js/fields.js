@@ -33,7 +33,7 @@ function createColor(suggest) {
     const nameInput = h('input', { type: 'text', placeholder: 'Например, шартрез' });
     const hexInput = h('input', { type: 'color', class: 'hex', value: suggest[0] || '#8a9a5b' });
     const row = h('div', { class: 'palette-row' }, suggest.map((hex, i) => h('button', {
-      class: 'swatch' + (i === 0 ? ' sel' : ''), style: { background: hex }, title: 'Цвет с фотографии',
+      class: 'swatch' + (i === 0 ? ' sel' : ''), style: { background: hex }, title: 'Цвет со снимка',
       onclick: e => {
         hexInput.value = hex;
         [...row.children].forEach(x => x.classList.remove('sel'));
@@ -43,7 +43,7 @@ function createColor(suggest) {
     const modal = openModal({
       title: 'Новый цвет',
       body: h('div', {},
-        suggest.length ? h('div', { class: 'section-title' }, 'С фотографии') : null,
+        suggest.length ? h('div', { class: 'section-title' }, 'Со снимка') : null,
         suggest.length ? row : null,
         h('label', { class: 'field' }, h('span', {}, 'Оттенок'), hexInput),
         h('label', { class: 'field' }, h('span', {}, 'Название'), nameInput)),

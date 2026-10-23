@@ -74,7 +74,7 @@ export async function importFiles(files) {
   }
   busy(false);
 
-  if (!added) { toast('Не удалось прочитать изображения', 3200); return; }
+  if (!added) { toast('Не удалось прочитать снимки', 3200); return; }
   nav.all = false;
   nav.catId = cat?.id ?? null;
   nav.subId = null;
@@ -85,7 +85,7 @@ export async function importFiles(files) {
 
 export async function startAddItem() {
   const src = await actionSheet('Добавить вещь', [
-    { id: 'cam', icon: '📸', label: 'Сделать фото' },
+    { id: 'cam', icon: '📸', label: 'Сфотографировать' },
     { id: 'file', icon: '🖼', label: 'Выбрать из галереи' },
     { id: 'bulk', icon: '🗃', label: 'Добавить несколько' }
   ]);
@@ -239,6 +239,10 @@ export function openItemForm(item, isNew = false) {
     async function applyPhoto(blob) {
       img = blob;
       preview.querySelector('img').src = urlFor(blob);
+      // строка молчит до тех пор, пока терять нечего: предупреждать заранее
+      // значит показывать её тем, кто ещё передумает, — а к частому
+      // предупреждению привыкают и перестают читать
+      warnEl.hidden = isNew;
       try {
         colors = extractPalette(await imageFromBlob(blob), 5);
         // подсказки для новых цветов палитры берём уже с нового снимка
@@ -257,10 +261,11 @@ export function openItemForm(item, isNew = false) {
     }
 
     async function replacePhoto() {
-      const act = await actionSheet('Заменить фотографию', [
-        // не «снять заново»: снимка с камеры могло и не быть, фотография
-        // могла прийти из галереи
-        { id: 'cam', icon: '📸', label: 'Сделать новое фото' },
+      const act = await actionSheet('Заменить снимок', [
+        // «фото» в нашем словаре означает камеру, поэтому называть её
+        // отдельно незачем — и «новое» не нужно: что это замена, сказано
+        // в заголовке списка
+        { id: 'cam', icon: '📸', label: 'Сфотографировать' },
         { id: 'file', icon: '🖼', label: 'Выбрать из галереи' }
       ]);
       if (!act) return;
@@ -272,11 +277,17 @@ export function openItemForm(item, isNew = false) {
       if (blob) await applyPhoto(blob);
     }
 
+    // прежний снимок нигде не сохраняется, поэтому «Сохранить» здесь —
+    // точка невозврата. Про «Отмену» говорим прямо: сама по себе она
+    // не выглядит спасением
+    const warnEl = h('p', { class: 'warn-line', hidden: true, style: { margin: '-6px 0 14px' } },
+      'Прежний снимок будет заменён. Отмена вернёт его.');
+
     const photoBtns = h('div', { class: 'photo-btns' },
-      h('button', { class: 'btn block', onclick: editCurrent }, '✎ Редактировать текущую фотографию'),
+      h('button', { class: 'btn block', onclick: editCurrent }, '✎ Редактировать текущий снимок'),
       // рамка та же: без неё кнопка читается как подпись. Второстепенность
       // показываем цветом текста, а не отсутствием очертаний
-      h('button', { class: 'btn block sub', onclick: replacePhoto }, 'Заменить фотографию')
+      h('button', { class: 'btn block sub', onclick: replacePhoto }, 'Заменить снимок')
     );
 
     const bgRow = h('div', { class: 'palette-row' }, BGS.map(b =>
@@ -305,7 +316,7 @@ export function openItemForm(item, isNew = false) {
     const modal = openModal({
       title: isNew ? 'Новая вещь' : 'Редактировать',
       body: h('div', {},
-        preview, photoBtns,
+        preview, photoBtns, warnEl,
         h('div', { class: 'section-title' }, 'Фон карточки'), bgRow,
         h('label', { class: 'field' }, h('span', {}, 'Категория'), catSel),
         h('label', { class: 'field' }, h('span', {}, 'Подкатегория'), subSel),

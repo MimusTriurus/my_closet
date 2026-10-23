@@ -170,11 +170,18 @@ main#views{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scro
 
 /* образы: вещь, ушедшая в архив, видна и в карточке, и на плитке */
 .card-photo.tall{aspect-ratio:3/4}
+/* Предупреждение о потере — красное: это и есть его работа. Бледная серая
+   строка с розовой полоской читалась как примечание и терялась рядом с
+   кнопкой, которая в тот же миг что-то стирала */
 .warn-line{
   margin:8px 0 0;padding:9px 11px;border-radius:var(--r-sm);
-  background:var(--surface-2);color:var(--muted);font-size:12.5px;line-height:1.45;
-  border-left:3px solid var(--warn);
+  background:#fbeceb;color:var(--danger);font-size:12.5px;line-height:1.45;
+  border-left:3px solid var(--danger);
 }
+/* …а сообщение, которое ни о чём не предупреждает («в образе вещь из
+   архива»), остаётся спокойным. Если красным будет всё, красное перестанет
+   что-либо значить */
+.warn-line.soft{background:var(--surface-2);color:var(--muted);border-left-color:var(--warn)}
 .tile.gone img{opacity:.45;filter:grayscale(.7)}
 .tile .gone-mark{
   position:absolute;top:5px;left:5px;width:18px;height:18px;border-radius:50%;

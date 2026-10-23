@@ -217,11 +217,18 @@ main#views{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scro
 
 /* образы: вещь, ушедшая в архив, видна и в карточке, и на плитке */
 .card-photo.tall{aspect-ratio:3/4}
+/* Предупреждение о потере — красное: это и есть его работа. Бледная серая
+   строка с розовой полоской читалась как примечание и терялась рядом с
+   кнопкой, которая в тот же миг что-то стирала */
 .warn-line{
   margin:8px 0 0;padding:9px 11px;border-radius:var(--r-sm);
-  background:var(--surface-2);color:var(--muted);font-size:12.5px;line-height:1.45;
-  border-left:3px solid var(--warn);
+  background:#fbeceb;color:var(--danger);font-size:12.5px;line-height:1.45;
+  border-left:3px solid var(--danger);
 }
+/* …а сообщение, которое ни о чём не предупреждает («в образе вещь из
+   архива»), остаётся спокойным. Если красным будет всё, красное перестанет
+   что-либо значить */
+.warn-line.soft{background:var(--surface-2);color:var(--muted);border-left-color:var(--warn)}
 .tile.gone img{opacity:.45;filter:grayscale(.7)}
 .tile .gone-mark{
   position:absolute;top:5px;left:5px;width:18px;height:18px;border-radius:50%;
@@ -3016,9 +3023,13 @@ function removeItemFlow(item) {
     const m = openModal({
       title: 'Удалить вещь?',
       body: h('div', {},
-        h('p', { style: { margin: '4px 0 8px' } }, used
-          ? `Вещь ${parts.join(', ')}. Оттуда она исчезнет — ${loss.join(', ')}.`
-          : 'Вещь нигде не используется — ни в образах, ни в календаре, ни в поездках.'),
+        // то, что будет потеряно, — красным; то, что просто описывает
+        // положение дел, — обычным текстом
+        used
+          ? h('p', { class: 'warn-line', style: { margin: '4px 0 10px' } },
+            `Вещь ${parts.join(', ')}. Оттуда она исчезнет — ${loss.join(', ')}. Отменить это нельзя.`)
+          : h('p', { style: { margin: '4px 0 8px' } },
+            'Вещь нигде не используется — ни в образах, ни в календаре, ни в поездках.'),
         used && !item.archived ? h('p', { class: 'muted small', style: { margin: '0 0 10px' } },
           'Если вещь просто больше не носится, лучше убрать её в архив: там сохранится и она сама, и всё, где она записана.') : null,
         used && !item.archived ? h('button', {
@@ -4456,7 +4467,7 @@ function renderOutfitCard(root, o) {
 
     // вещь, ушедшая в архив, образ не портит — но знать об этом нужно до того,
     // как образ попадёт в календарь и добавит ей носку, которой не было
-    gone.length ? h('p', { class: 'warn-line' }, goneText(gone)) : null,
+    gone.length ? h('p', { class: 'warn-line soft' }, goneText(gone)) : null,
 
     // Действия стоят выше списка вещей: за ними приходят, а список —
     // справка. На телефоне до кнопок иначе нужно было прокручивать экран

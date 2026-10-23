@@ -836,10 +836,13 @@ function renderArchiveRoot(root) {
       h('div', { class: 'big' }, '📦'),
       h('p', {}, 'Архив пуст. Вещи попадают сюда из карточки — «В архив».')),
 
-    cats.length || loose ? h('button', {
+    // кнопка видна и в пустом архиве: иначе завести категории можно было бы
+    // только после первой архивации — то есть ровно тогда, когда выбирать
+    // уже поздно, вещь просит место прямо сейчас
+    h('button', {
       class: 'btn block ghost', style: { marginTop: '14px' },
       onclick: () => openClosetCats(SCOPE_ARCHIVE)
-    }, '⚙️ Категории архива') : null
+    }, '⚙️ Категории архива')
   );
   root.style.paddingBottom = '';
 }

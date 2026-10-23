@@ -39,7 +39,7 @@ export function pickItems({ title = 'Выбрать вещи', selected = [], mu
 
     const catOf = id => closetCats().find(c => c.id === id) || null;
     const inCat = id => visibleItems().filter(i => (i.catId || null) === (id === NO_CAT ? null : id));
-    const subsOf = cat => (cat?.subs || []).filter(sb => inCat(cat.id).some(i => i.subId === sb.id));
+    const subsOf = cat => cat?.subs || [];
 
     function listed() {
       if (catId === ALL) return visibleItems();
@@ -64,7 +64,10 @@ export function pickItems({ title = 'Выбрать вещи', selected = [], mu
 
     function render() {
       doneBtn.textContent = sel.size ? `Готово · ${sel.size}` : 'Готово';
-      const cats = closetCats().filter(c => inCat(c.id).length);
+      // пустые категории показываем: человек их завёл сам, и встреча с пустой
+      // папкой — напоминание либо наполнить её, либо убрать. Прятать значило
+      // бы показывать в «Гардеробе» одно, а в выборе другое, без объяснений
+      const cats = closetCats();
       const loose = inCat(NO_CAT).length;
 
       // корень: папки. Категорий нет — показывать нечего, сразу сетка
@@ -155,7 +158,7 @@ export function pickOutfits({ title = 'Выбрать образы', selected = 
 
     const catOf = id => outfitCats().find(c => c.id === id) || null;
     const inCat = id => state.outfits.filter(o => (o.catId || null) === (id === NO_CAT ? null : id));
-    const subsOf = cat => (cat?.subs || []).filter(sb => inCat(cat.id).some(o => o.subId === sb.id));
+    const subsOf = cat => cat?.subs || [];
 
     function listed() {
       if (catId === null) return state.outfits;              // «Все образы»
@@ -185,7 +188,7 @@ export function pickOutfits({ title = 'Выбрать образы', selected = 
     };
 
     function render() {
-      const cats = outfitCats().filter(c => inCat(c.id).length);
+      const cats = outfitCats();   // в том числе пустые — см. pickItems
       const loose = inCat(NO_CAT).length;
 
       // корень: папки. Без категорий показывать нечего — сразу сетка

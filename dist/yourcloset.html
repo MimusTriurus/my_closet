@@ -1968,7 +1968,7 @@ function pickItems({ title = 'Выбрать вещи', selected = [], multi = t
 
     const catOf = id => closetCats().find(c => c.id === id) || null;
     const inCat = id => visibleItems().filter(i => (i.catId || null) === (id === NO_CAT ? null : id));
-    const subsOf = cat => (cat?.subs || []).filter(sb => inCat(cat.id).some(i => i.subId === sb.id));
+    const subsOf = cat => cat?.subs || [];
 
     function listed() {
       if (catId === ALL) return visibleItems();
@@ -1993,7 +1993,10 @@ function pickItems({ title = 'Выбрать вещи', selected = [], multi = t
 
     function render() {
       doneBtn.textContent = sel.size ? `Готово · ${sel.size}` : 'Готово';
-      const cats = closetCats().filter(c => inCat(c.id).length);
+      // пустые категории показываем: человек их завёл сам, и встреча с пустой
+      // папкой — напоминание либо наполнить её, либо убрать. Прятать значило
+      // бы показывать в «Гардеробе» одно, а в выборе другое, без объяснений
+      const cats = closetCats();
       const loose = inCat(NO_CAT).length;
 
       // корень: папки. Категорий нет — показывать нечего, сразу сетка
@@ -2084,7 +2087,7 @@ function pickOutfits({ title = 'Выбрать образы', selected = [], mul
 
     const catOf = id => outfitCats().find(c => c.id === id) || null;
     const inCat = id => state.outfits.filter(o => (o.catId || null) === (id === NO_CAT ? null : id));
-    const subsOf = cat => (cat?.subs || []).filter(sb => inCat(cat.id).some(o => o.subId === sb.id));
+    const subsOf = cat => cat?.subs || [];
 
     function listed() {
       if (catId === null) return state.outfits;              // «Все образы»
@@ -2114,7 +2117,7 @@ function pickOutfits({ title = 'Выбрать образы', selected = [], mul
     };
 
     function render() {
-      const cats = outfitCats().filter(c => inCat(c.id).length);
+      const cats = outfitCats();   // в том числе пустые — см. pickItems
       const loose = inCat(NO_CAT).length;
 
       // корень: папки. Без категорий показывать нечего — сразу сетка
@@ -3019,10 +3022,13 @@ function renderArchiveRoot(root) {
       h('div', { class: 'big' }, '📦'),
       h('p', {}, 'Архив пуст. Вещи попадают сюда из карточки — «В архив».')),
 
-    cats.length || loose ? h('button', {
+    // кнопка видна и в пустом архиве: иначе завести категории можно было бы
+    // только после первой архивации — то есть ровно тогда, когда выбирать
+    // уже поздно, вещь просит место прямо сейчас
+    h('button', {
       class: 'btn block ghost', style: { marginTop: '14px' },
       onclick: () => openClosetCats(SCOPE_ARCHIVE)
-    }, '⚙️ Категории архива') : null
+    }, '⚙️ Категории архива')
   );
   root.style.paddingBottom = '';
 }
@@ -4132,18 +4138,22 @@ function renderPacking(root) {
           ? 'Активных поездок нет — все лежат в архиве.'
           : 'Поездок пока нет. Чтобы собрать чемодан, нажмите «+» внизу справа.')),
 
-    // архив всегда на одном месте — закреплён над панелью вкладок
-    archived.length ? h('div', { class: 'archive-bar', onclick: openArchive },
+    // архив всегда на одном месте — закреплён над панелью вкладок, и виден
+    // даже пустым: это постоянная полка, а не след от первой архивации.
+    // Полка, появляющаяся задним числом, читается как пропажа, и о самой
+    // возможности убрать поездку, не удаляя её, узнать было бы неоткуда.
+    // То же правило, что у архива вещей в «Гардеробе»
+    h('div', { class: 'archive-bar', onclick: openArchive },
       h('span', {}, '📦'),
       h('b', { class: 'spacer' }, 'Архив поездок'),
-      h('span', { class: 'muted' }, archived.length),
+      archived.length ? h('span', { class: 'muted' }, archived.length) : null,
       h('span', { class: 'muted' }, '›')
-    ) : null,
+    ),
 
-    h('button', { class: 'fab' + (archived.length ? ' raised' : ''), onclick: newTrip }, '+')
+    h('button', { class: 'fab raised', onclick: newTrip }, '+')
   );
 
-  root.style.paddingBottom = archived.length ? '140px' : '';
+  root.style.paddingBottom = '140px';
 }
 
 /* ===== settings.js ===== */

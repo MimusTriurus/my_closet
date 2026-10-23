@@ -220,16 +220,20 @@ export function renderPacking(root) {
           ? 'Активных поездок нет — все лежат в архиве.'
           : 'Поездок пока нет. Чтобы собрать чемодан, нажмите «+» внизу справа.')),
 
-    // архив всегда на одном месте — закреплён над панелью вкладок
-    archived.length ? h('div', { class: 'archive-bar', onclick: openArchive },
+    // архив всегда на одном месте — закреплён над панелью вкладок, и виден
+    // даже пустым: это постоянная полка, а не след от первой архивации.
+    // Полка, появляющаяся задним числом, читается как пропажа, и о самой
+    // возможности убрать поездку, не удаляя её, узнать было бы неоткуда.
+    // То же правило, что у архива вещей в «Гардеробе»
+    h('div', { class: 'archive-bar', onclick: openArchive },
       h('span', {}, '📦'),
       h('b', { class: 'spacer' }, 'Архив поездок'),
-      h('span', { class: 'muted' }, archived.length),
+      archived.length ? h('span', { class: 'muted' }, archived.length) : null,
       h('span', { class: 'muted' }, '›')
-    ) : null,
+    ),
 
-    h('button', { class: 'fab' + (archived.length ? ' raised' : ''), onclick: newTrip }, '+')
+    h('button', { class: 'fab raised', onclick: newTrip }, '+')
   );
 
-  root.style.paddingBottom = archived.length ? '140px' : '';
+  root.style.paddingBottom = '140px';
 }

@@ -317,9 +317,13 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent-soft);bor
   box-shadow:0 2px 10px rgba(36,31,28,.10)
 }
 .ed-hint{
-  flex:none;margin:0;padding:10px 14px;text-align:center;
-  color:var(--muted);font-size:12.5px;line-height:1.4
+  flex:none;margin:0;padding:8px 14px 10px;
+  color:var(--muted);font-size:12px;line-height:1.35
 }
+.ed-hint .section-title{margin:0 0 4px}
+.ed-hint ul{margin:0;padding:0;list-style:none}
+.ed-hint li{position:relative;padding-left:12px;margin-bottom:3px}
+.ed-hint li::before{content:'·';position:absolute;left:3px;top:-1px;font-weight:700}
 .palette-row{display:flex;gap:8px;overflow-x:auto;padding:8px 0;scrollbar-width:none}
 .palette-row::-webkit-scrollbar{display:none}
 

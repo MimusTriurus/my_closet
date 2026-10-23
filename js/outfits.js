@@ -32,9 +32,21 @@ export async function openOutfitEditor(existing, isCopy = false) {
   const host = h('div', { id: 'stage-host' });
   const toolbar = h('div', { class: 'tools' });
   const opts = h('div', { class: 'tool-opts' });
-  // подсказка стоит под инструментами, в свободном поле: это единственное
-  // место, где длинная строка никого не теснит, и она меняется по делу
-  const hint = h('p', { class: 'ed-hint' });
+  /**
+   * Подсказки показываются все сразу, а не по очереди: сменяющаяся строка
+   * сообщает только то, что человек уже делает, и ничего не говорит о том,
+   * чего он ещё не пробовал. Здесь же виден весь набор приёмов.
+   */
+  const HINTS = [
+    'Нажмите «Вещи», чтобы добавить вещь на лист',
+    'Коснитесь вещи, чтобы переместить её на верхний слой',
+    'Коснитесь верхней вещи и нажмите «На нижний слой», чтобы перенести верхнюю вещь на нижний слой',
+    'Удерживайте вещь пальцем, чтобы сместить',
+    'Удерживайте вещь за уголки и смещайте пальцы, чтобы менять размер и поворот'
+  ];
+  const hint = h('div', { class: 'ed-hint' },
+    h('div', { class: 'section-title' }, 'Подсказки'),
+    h('ul', {}, HINTS.map(t => h('li', {}, t))));
 
   // редактор отдаёт сохранённый образ наружу: календарю нужно положить
   // на день именно копию, которую пользователь только что собрал
@@ -90,7 +102,7 @@ export async function openOutfitEditor(existing, isCopy = false) {
     stage.batchDraw();
     return s;
   }
-  let viewScale = fit();
+  let viewScale = fit();   // предварительный: окончательный — ниже, см. fit()
   const onResize = () => { viewScale = fit(); };
   window.addEventListener('resize', onResize);
 
@@ -118,15 +130,6 @@ export async function openOutfitEditor(existing, isCopy = false) {
    * Цена: подвинув вещь, лежащую сзади, её поднимешь, даже если не хотел.
    * Исправляется касанием соседней вещи и совпадает с тем, как одеваются.
    */
-  function setHint() {
-    const n = layer.find('Image').length;
-    hint.textContent = !n
-      ? 'Нажмите «Вещи», чтобы положить вещь на лист'
-      : tr.nodes().length
-        ? 'Тащите, чтобы двигать. Уголки — размер и поворот'
-        : 'Коснитесь вещи: она поднимется наверх, и её можно двигать';
-  }
-
   stage.on('pointerdown', e => {
     if (e.target === stage || e.target === bgRect) tr.nodes([]);
     else if (e.target.getClassName() === 'Image') {
@@ -134,7 +137,6 @@ export async function openOutfitEditor(existing, isCopy = false) {
       e.target.moveToTop();
       tr.moveToTop();
     }
-    setHint();
     layer.batchDraw();
   });
 
@@ -172,7 +174,6 @@ export async function openOutfitEditor(existing, isCopy = false) {
       i++;
       if (n) tr.nodes([n]);
     }
-    setHint();
     layer.batchDraw();
   }
 
@@ -198,7 +199,6 @@ export async function openOutfitEditor(existing, isCopy = false) {
       await addItemNode(it.id, { y: SH * (0.22 + 0.27 * i), x: SW / 2 });
       i++;
     }
-    setHint();
     layer.batchDraw();
     toast('Случайный образ');
   }
@@ -214,7 +214,7 @@ export async function openOutfitEditor(existing, isCopy = false) {
     // одна кнопка вместо двух стрелок: наверх поднимает касание, а вниз
     // пальцем не покажешь — для этого и кнопка
     {
-      ic: '⤓', label: 'Под низ', fn: () => {
+      ic: '⤓', label: 'На нижний слой', fn: () => {
         const n = selected();
         if (!n) return toast('Сначала выберите вещь');
         n.zIndex(1);          // 1, а не 0: под нулём лежит фон листа
@@ -222,7 +222,7 @@ export async function openOutfitEditor(existing, isCopy = false) {
         layer.batchDraw();
       }
     },
-    { ic: '🗑', label: 'Убрать', fn: () => { const n = selected(); if (n) { n.destroy(); tr.nodes([]); setHint(); layer.batchDraw(); } } }
+    { ic: '🗑', label: 'Убрать', fn: () => { const n = selected(); if (n) { n.destroy(); tr.nodes([]); layer.batchDraw(); } } }
   ];
   fill(toolbar, ...TOOLS.map(t =>
     h('button', { class: 'tool', onclick: t.fn }, h('span', { class: 'ic' }, t.ic), h('span', {}, t.label))));
@@ -244,7 +244,9 @@ export async function openOutfitEditor(existing, isCopy = false) {
       })
     )));
 
-  setHint();
+  // пересчитываем, когда все полосы внизу уже на месте: первый расчёт шёл
+  // по пустой палитре и ошибался на её высоту
+  viewScale = fit();
 
   let saved = null;
 

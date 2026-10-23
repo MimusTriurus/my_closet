@@ -310,12 +310,15 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent-soft);bor
   touch-action:none;user-select:none;color:var(--muted);
 }
 /* точки рисуем стилями, а не символом: знак Брайля ⠿ шрифт выводит крохотным
-   и бледным — ручку было не разглядеть */
-.drag-h::before{
-  content:'';display:block;width:11px;height:17px;opacity:.6;
+   и бледным — ручку было не разглядеть. Тот же рисунок идёт и в подсказку:
+   показать ручку надёжнее, чем описать её словами */
+.drag-h::before,.drag-mark{
+  content:'';display:inline-block;width:11px;height:17px;opacity:.6;
   background-image:radial-gradient(currentColor 1.6px, transparent 1.8px);
   background-size:6px 6px;
 }
+.drag-h::before{display:block}
+.drag-mark{height:13px;background-size:5px 5px;vertical-align:-2px;margin:0 1px}
 .lrow.dragging{
   position:relative;z-index:5;box-shadow:0 6px 18px rgba(0,0,0,.18);
   border-color:var(--accent);
@@ -603,6 +606,9 @@ function clear(node) { while (node.firstChild) node.removeChild(node.firstChild)
  */
 const dragHandle = () =>
   h('div', { class: 'drag-h', title: 'Перетащите, чтобы переставить' });
+
+/** Та же ручка, но внутри текста подсказки: показать её надёжнее, чем описать. */
+const dragMark = () => h('span', { class: 'drag-mark' });
 
 // порог: палец никогда не стоит ровно, и без него каждое касание ручки
 // считалось бы переносом
@@ -1476,7 +1482,7 @@ const nSubs = n => plural(n, 'подкатегория', 'подкатегори
 // Подсказка стоит сверху и всегда: ручка переноса — вещь неочевидная, а окно
 // здесь настроечное, строка текста в нём никому не мешает
 const dragHint = what => h('p', { class: 'hint-top' },
-  'Потяните строку за ручку справа, чтобы переставить ' + what + '.');
+  'Потяните за ручку ', dragMark(), ' справа, чтобы переставить ' + what + '.');
 
 /**
  * Список категорий пространства: переименовать, удалить, добавить.

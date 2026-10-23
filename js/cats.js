@@ -1,7 +1,7 @@
 // Категории и подкатегории — общий механизм на три пространства: гардероб,
 // архив вещей и образы. У каждого свой список, свои счётчики и свои
 // миниатюры, поэтому пространство описывается объектом и передаётся сюда.
-import { fill, h, openModal, confirmDialog, promptDialog, actionSheet, alertDialog, plural, dragHandle, dragReorder } from './ui.js';
+import { fill, h, openModal, confirmDialog, promptDialog, actionSheet, alertDialog, plural, dragHandle, dragMark, dragReorder } from './ui.js';
 import { saveCat, deleteCat, catsIn, countIn, reorderCats, nextCatOrder } from './state.js';
 import { uid } from './db.js';
 
@@ -10,7 +10,7 @@ const nSubs = n => plural(n, 'подкатегория', 'подкатегори
 // Подсказка стоит сверху и всегда: ручка переноса — вещь неочевидная, а окно
 // здесь настроечное, строка текста в нём никому не мешает
 const dragHint = what => h('p', { class: 'hint-top' },
-  'Потяните строку за ручку справа, чтобы переставить ' + what + '.');
+  'Потяните за ручку ', dragMark(), ' справа, чтобы переставить ' + what + '.');
 
 /**
  * Список категорий пространства: переименовать, удалить, добавить.

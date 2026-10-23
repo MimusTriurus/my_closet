@@ -36,6 +36,9 @@ export function clear(node) { while (node.firstChild) node.removeChild(node.firs
 export const dragHandle = () =>
   h('div', { class: 'drag-h', title: 'Перетащите, чтобы переставить' });
 
+/** Та же ручка, но внутри текста подсказки: показать её надёжнее, чем описать. */
+export const dragMark = () => h('span', { class: 'drag-mark' });
+
 // порог: палец никогда не стоит ровно, и без него каждое касание ручки
 // считалось бы переносом
 const DRAG_MIN = 5;

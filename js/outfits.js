@@ -328,6 +328,38 @@ export async function openOutfitEditor(existing, isCopy = false) {
     });
   };
 
+  /**
+   * «Убрать» срабатывает с одного нажатия, поэтому даём вернуть вещь —
+   * запоминаем, как она лежала, и предлагаем это во всплывашке. Вопрос
+   * перед каждым убиранием был бы хуже: убирают часто, а жалеют редко.
+   */
+  function removeSelected() {
+    const n = selected();
+    if (!n) return;
+    const pose = {
+      itemId: n.getAttr('itemId'), x: n.x(), y: n.y(),
+      scaleX: n.scaleX(), scaleY: n.scaleY(), rotation: n.rotation(),
+      z: n.zIndex()
+    };
+    n.destroy();
+    tr.nodes([]);
+    layer.batchDraw();
+    toast('Вещь убрана с листа', 5000, {
+      label: 'Вернуть',
+      onclick: async () => {
+        const back = await addItemNode(pose.itemId, pose);
+        if (!back) return;
+        tr.nodes([back]);
+        tr.moveToTop();
+        // слой возвращаем последним: иначе вещь всплывает наверх и образ
+        // собирается не так, как был. Выше вещей только рамка выделения,
+        // поэтому верхний допустимый номер — на два меньше числа слоёв
+        back.zIndex(Math.min(pose.z, layer.getChildren().length - 2));
+        layer.batchDraw();
+      }
+    });
+  }
+
   const TOOLS = [
     { ic: '➕', label: 'Вещи', fn: addItems },
     { ic: '🎨', label: 'Фон', fn: openBg },
@@ -343,7 +375,7 @@ export async function openOutfitEditor(existing, isCopy = false) {
         layer.batchDraw();
       }
     },
-    { ic: '🗑', label: 'Убрать', fn: () => { const n = selected(); if (n) { n.destroy(); tr.nodes([]); layer.batchDraw(); } } },
+    { ic: '🗑', label: 'Убрать', fn: removeSelected },
     { ic: '❔', label: 'Подсказки', fn: openHints }
   ];
   fill(toolbar, ...TOOLS.map(t =>

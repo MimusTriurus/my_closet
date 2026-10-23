@@ -391,6 +391,12 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent-soft);bor
 }
 /* выбор цветов для подбора: строка на цвет — нужно и название, и сколько
    за ним вещей, одним кружком этого не сказать */
+/* кнопка внутри всплывашки: светлая на тёмном, чтобы читалась как действие */
+.toast-act{
+  margin-left:10px;background:none;border:none;padding:0;
+  color:#f0d9c2;font:inherit;font-weight:700;text-decoration:underline;
+}
+
 /* сброс — не фильтр, а действие: тусклее остальных чипов, чтобы не читаться
    как ещё одно условие отбора */
 .chip.reset{color:var(--muted);border-style:dashed}
@@ -745,8 +751,19 @@ function urlFor(blob) {
 }
 
 /* ---- тосты ---- */
-function toast(msg, ms = 2000) {
+/**
+ * `action` — кнопка внутри всплывашки: {label, onclick}. Нужна там, где
+ * действие совершилось молча и его хочется вернуть, пока помнишь о нём.
+ * Живёт столько же, сколько сама всплывашка: предложение, а не вопрос.
+ */
+function toast(msg, ms = 2000, action = null) {
   const t = h('div', { class: 'toast' }, msg);
+  if (action) {
+    t.append(h('button', {
+      class: 'toast-act',
+      onclick: () => { t.remove(); action.onclick(); }
+    }, action.label));
+  }
   qs('#toast-root').append(t);
   setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .25s'; }, ms - 250);
   setTimeout(() => t.remove(), ms);
@@ -4215,6 +4232,38 @@ async function openOutfitEditor(existing, isCopy = false) {
     });
   };
 
+  /**
+   * «Убрать» срабатывает с одного нажатия, поэтому даём вернуть вещь —
+   * запоминаем, как она лежала, и предлагаем это во всплывашке. Вопрос
+   * перед каждым убиранием был бы хуже: убирают часто, а жалеют редко.
+   */
+  function removeSelected() {
+    const n = selected();
+    if (!n) return;
+    const pose = {
+      itemId: n.getAttr('itemId'), x: n.x(), y: n.y(),
+      scaleX: n.scaleX(), scaleY: n.scaleY(), rotation: n.rotation(),
+      z: n.zIndex()
+    };
+    n.destroy();
+    tr.nodes([]);
+    layer.batchDraw();
+    toast('Вещь убрана с листа', 5000, {
+      label: 'Вернуть',
+      onclick: async () => {
+        const back = await addItemNode(pose.itemId, pose);
+        if (!back) return;
+        tr.nodes([back]);
+        tr.moveToTop();
+        // слой возвращаем последним: иначе вещь всплывает наверх и образ
+        // собирается не так, как был. Выше вещей только рамка выделения,
+        // поэтому верхний допустимый номер — на два меньше числа слоёв
+        back.zIndex(Math.min(pose.z, layer.getChildren().length - 2));
+        layer.batchDraw();
+      }
+    });
+  }
+
   const TOOLS = [
     { ic: '➕', label: 'Вещи', fn: addItems },
     { ic: '🎨', label: 'Фон', fn: openBg },
@@ -4230,7 +4279,7 @@ async function openOutfitEditor(existing, isCopy = false) {
         layer.batchDraw();
       }
     },
-    { ic: '🗑', label: 'Убрать', fn: () => { const n = selected(); if (n) { n.destroy(); tr.nodes([]); layer.batchDraw(); } } },
+    { ic: '🗑', label: 'Убрать', fn: removeSelected },
     { ic: '❔', label: 'Подсказки', fn: openHints }
   ];
   fill(toolbar, ...TOOLS.map(t =>

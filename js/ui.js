@@ -158,8 +158,19 @@ export function urlFor(blob) {
 }
 
 /* ---- тосты ---- */
-export function toast(msg, ms = 2000) {
+/**
+ * `action` — кнопка внутри всплывашки: {label, onclick}. Нужна там, где
+ * действие совершилось молча и его хочется вернуть, пока помнишь о нём.
+ * Живёт столько же, сколько сама всплывашка: предложение, а не вопрос.
+ */
+export function toast(msg, ms = 2000, action = null) {
   const t = h('div', { class: 'toast' }, msg);
+  if (action) {
+    t.append(h('button', {
+      class: 'toast-act',
+      onclick: () => { t.remove(); action.onclick(); }
+    }, action.label));
+  }
   qs('#toast-root').append(t);
   setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .25s'; }, ms - 250);
   setTimeout(() => t.remove(), ms);

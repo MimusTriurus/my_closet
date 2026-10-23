@@ -5189,9 +5189,15 @@ async function askRestore(file) {
 
   const has = s => (dump.stores[s] || []).length;
   const made = dump.createdAt ? new Date(dump.createdAt).toLocaleDateString('ru-RU') : null;
+
+  // На пустом приложении терять нечего — это и есть главный случай: новый
+  // телефон, установка с нуля. Пугать заменой того, чего нет, и предлагать
+  // сохранить пустоту было бы враньём
+  const empty = !state.items.length && !state.outfits.length && !state.trips.length;
+
   const saveBtn = h('button', { class: 'btn block' }, '⬇️ Сначала сохранить текущую копию');
   const note = h('p', { class: 'muted small', style: { margin: '10px 0 0' } },
-    'Советуем сохранить то, что есть сейчас, — если копия окажется не той, вернуться будет не к чему.');
+    'Сохранять не обязательно, но если копия окажется не той, вернуться будет не к чему.');
 
   const m = openModal({
     title: 'Восстановить из копии?',
@@ -5201,14 +5207,20 @@ async function askRestore(file) {
         + `поездок ${has('trips')}${made ? `. Копия от ${made}` : ''}.`),
       // считаем все вещи, а не только гардероб: заменится и то, что лежит
       // на рабочих полках и в архиве, — сравнивать надо одно с одним
-      h('p', { class: 'warn-line', style: { margin: '0 0 2px' } },
-        `Всё, что сейчас в приложении (${nItems(state.items.length)}, ${nOutfits(state.outfits.length)}), `
-        + 'будет заменено. Отменить это нельзя.'),
-      saveBtn, note
+      empty ? h('p', { class: 'muted small', style: { margin: '0' } },
+        'Сейчас в приложении пусто — заменять нечего.')
+        : h('p', { class: 'warn-line', style: { margin: '0 0 2px' } },
+          `Всё, что сейчас в приложении (${nItems(state.items.length)}, ${nOutfits(state.outfits.length)}), `
+          + 'будет заменено. Отменить это нельзя.'),
+      empty ? null : saveBtn,
+      empty ? null : note
     ),
     foot: [
       h('button', { class: 'btn', onclick: () => m.close() }, 'Отмена'),
-      h('button', { class: 'btn danger', onclick: () => { m.close(); importAll(dump); } }, 'Восстановить')
+      h('button', {
+        class: 'btn ' + (empty ? 'primary' : 'danger'),
+        onclick: () => { m.close(); importAll(dump); }
+      }, 'Восстановить')
     ]
   });
 

@@ -86,20 +86,31 @@ export function openSubManager(space, cat, onDone) {
         h('div', { class: 't' },
           h('b', {}, s.name),
           h('span', {}, space.n(space.countSub(cat, s.id)))),
+        // действия те же и в том же месте, что у категорий: редкое и опасное
+        // живёт в «⋯», а не отдельной кнопкой рядом
         h('button', {
           class: 'btn btn-sm', onclick: async () => {
-            const n = await promptDialog('Переименовать', s.name);
-            if (n) { s.name = n; await saveCat(cat); render(); }
+            const act = await actionSheet(s.name, [
+              { id: 'ren', icon: '✎', label: 'Переименовать' },
+              { id: 'del', icon: '🗑', label: 'Удалить подкатегорию', danger: true }
+            ]);
+            if (act === 'ren') {
+              const n = await promptDialog('Переименовать', s.name);
+              if (n) { s.name = n; await saveCat(cat); render(); }
+            } else if (act === 'del') {
+              // содержимое остаётся в категории, его подхватит «Другое», —
+              // но сказать об этом надо: раньше подкатегория исчезала молча
+              const n = space.countSub(cat, s.id);
+              const ok = await confirmDialog(n
+                ? `Удалить «${s.name}»? ${space.n(n)} останется в категории, в разделе «Другое».`
+                : `Удалить «${s.name}»?`);
+              if (!ok) return;
+              cat.subs = cat.subs.filter(x => x.id !== s.id);
+              await space.detachSub(s.id);
+              await saveCat(cat); render();
+            }
           }
-        }, '✎'),
-        h('button', {
-          class: 'btn btn-sm danger', onclick: async () => {
-            // содержимое остаётся в категории: его подхватит «Другое»
-            cat.subs = cat.subs.filter(x => x.id !== s.id);
-            await space.detachSub(s.id);
-            await saveCat(cat); render();
-          }
-        }, '🗑')
+        }, '⋯')
       )),
       cat.subs.length ? null : h('p', { class: 'muted small' }, 'Пока пусто'),
       h('button', {

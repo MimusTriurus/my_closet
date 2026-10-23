@@ -2188,7 +2188,7 @@ function pickOutfits({ title = 'Выбрать образы', selected = [], mul
 /* ===== closet.js ===== */
 // Вкладка «Гардероб»: категории, подкатегории, фильтр по цвету, сортировка, карточка вещи.
 import {
-  fill, h, qs, urlFor, toast, openModal, confirmDialog, actionSheet, busy, plural, nItems
+  fill, h, qs, urlFor, toast, openModal, confirmDialog, actionSheet, busy, plural, nItems, nOutfits
 } from './ui.js';
 import {
   state, saveItem, saveItems, deleteItem, catById, subById, countInCat,
@@ -2377,6 +2377,59 @@ function colorsGroup(ids, suggest) {
   }
   paint();
   return box;
+}
+
+/**
+ * Удаление вещи. Один вопрос, в котором сказано, **что именно пропадёт**:
+ * вещь вычёркивается из образов, отмеченных дней и поездок молча, и это
+ * опаснее исчезновения самой карточки — образ соберётся без неё, а понять
+ * это потом будет не по чему.
+ *
+ * Если вещь где-то участвует, первым предлагаем архив: он убирает вещь из
+ * выбора, но сохраняет и её, и всё, что на неё ссылается. Удаление — для
+ * ошибок и дублей, а не для расставания с вещью.
+ */
+function removeItemFlow(item) {
+  const outfits = state.outfits.filter(o => (o.layers || []).some(l => l.itemId === item.id)).length;
+  const days = wearCount(item.id);
+  const trips = state.trips.filter(t => (t.itemIds || []).includes(item.id)).length;
+
+  // перечисляем только то, что есть на самом деле: предупреждение, которое
+  // пугает выдуманными последствиями, перестают читать после первого раза
+  const parts = [], loss = [];
+  if (outfits) { parts.push('входит в ' + nOutfits(outfits)); loss.push('образы соберутся без неё'); }
+  if (days) { parts.push('отмечена в календаре ' + plural(days, 'раз', 'раза', 'раз')); loss.push('отметки пропадут'); }
+  if (trips) { parts.push('лежит в ' + plural(trips, 'поездке', 'поездках', 'поездках')); loss.push('из списка поездки уйдёт'); }
+  const used = parts.length;
+
+  return new Promise(res => {
+    let done = false;
+    const finish = async what => {
+      done = true; m.close();
+      if (what === 'arc') { if (await archiveItem(item)) closeCard(); }
+      else if (what === 'del') { closeCard(); await deleteItem(item.id); toast('Удалено'); }
+      res(what);
+    };
+
+    const m = openModal({
+      title: 'Удалить вещь?',
+      body: h('div', {},
+        h('p', { style: { margin: '4px 0 8px' } }, used
+          ? `Вещь ${parts.join(', ')}. Оттуда она исчезнет — ${loss.join(', ')}.`
+          : 'Вещь нигде не используется — ни в образах, ни в календаре, ни в поездках.'),
+        used && !item.archived ? h('p', { class: 'muted small', style: { margin: '0 0 10px' } },
+          'Если вещь просто больше не носится, лучше убрать её в архив: там сохранится и она сама, и всё, где она записана.') : null,
+        used && !item.archived ? h('button', {
+          class: 'btn block primary', onclick: () => finish('arc')
+        }, '📦 Переместить в архив') : null
+      ),
+      foot: [
+        h('button', { class: 'btn', onclick: () => m.close() }, 'Отмена'),
+        h('button', { class: 'btn danger', onclick: () => finish('del') }, 'Удалить')
+      ],
+      onClose: () => { if (!done) res(null); }
+    });
+  });
 }
 
 /* ---------- форма вещи ---------- */
@@ -2642,15 +2695,19 @@ function renderItemCard(root, item) {
           class: 'btn', onclick: async () => { if (await archiveItem(item)) closeCard(); }
         }, '📦 В архив'),
       h('button', { class: 'btn', onclick: () => openItemForm(item) }, '✎ Изменить'),
+      // удаление убрано из ряда: необратимая кнопка не должна стоять вплотную
+      // к безобидной. Там же, где у поездок и категорий, — в «⋯»
       h('button', {
-        class: 'btn danger', onclick: async () => {
-          if (await confirmDialog('Удалить вещь из гардероба?')) {
-            closeCard();
-            await deleteItem(item.id);
-            toast('Удалено');
-          }
+        class: 'btn', title: 'Ещё', onclick: async () => {
+          // в заголовке — марка, если она есть: itemLabel подставил бы
+          // название категории, а «Сортировка» над кнопкой «Удалить вещь»
+          // читается как удаление раздела
+          const act = await actionSheet(entryName('brands', item.brandId) || 'Вещь', [
+            { id: 'del', icon: '🗑', label: 'Удалить вещь', danger: true }
+          ]);
+          if (act === 'del') await removeItemFlow(item);
         }
-      }, '🗑')
+      }, '⋯')
     )
   );
   root.style.paddingBottom = '';

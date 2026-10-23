@@ -3725,6 +3725,7 @@ async function openOutfitEditor(existing, isCopy = false) {
     'Коснитесь верхней вещи и нажмите «На нижний слой», чтобы перенести верхнюю вещь на нижний слой',
     'Удерживайте вещь пальцем, чтобы сместить',
     'Удерживайте вещь за уголки и смещайте пальцы, чтобы менять размер и поворот',
+    'Или возьмите вещь двумя пальцами: разводите — крупнее, сводите — мельче, поворачивайте — наклон',
     'Коснитесь вещи и нажмите «Убрать», чтобы убрать её с листа — в гардеробе вещь останется'
   ];
   const openHints = () => openModal({
@@ -3888,6 +3889,66 @@ async function openOutfitEditor(existing, isCopy = false) {
   }
 
   function selected() { return tr.nodes()[0] || null; }
+
+  /* ---------- два пальца: размер и поворот ----------
+   * На телефоне тянуть за уголок — приём с компьютера: он требует точного
+   * попадания и делает одно действие за раз. Привычнее развести пальцы.
+   * Konva сама такого не умеет, поэтому считаем по двум касаниям: во
+   * сколько раз изменилось расстояние — во столько же масштаб, на сколько
+   * повернулась линия между пальцами — на столько же вещь. Середина между
+   * пальцами тащит вещь за собой, иначе она уезжает из-под рук.
+   *
+   * Уголки остаются: мышью иначе не повернуть, да и пальцем бывает нужна
+   * точность.
+   */
+  let grab = null;
+  const toStage = t => {
+    const r = stage.container().getBoundingClientRect();
+    return { x: (t.clientX - r.left) / viewScale, y: (t.clientY - r.top) / viewScale };
+  };
+  const gap = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
+  const tilt = (a, b) => Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
+
+  stage.on('touchmove', e => {
+    const t = e.evt.touches;
+    const node = selected();
+    // палец убрали — жест кончился, даже если touchend до нас не дошёл:
+    // иначе вещь осталась бы неперетаскиваемой до конца сеанса
+    if (t.length !== 2 || !node) { endGrab(); return; }
+    e.evt.preventDefault();
+
+    const p1 = toStage(t[0]), p2 = toStage(t[1]);
+    const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+
+    if (!grab) {
+      // перетаскивание выключаем: иначе вещь поедет ещё и за первым пальцем
+      node.stopDrag();
+      node.draggable(false);
+      grab = {
+        node,                                   // именно эту вещь потом и отпускаем:
+        gap: gap(p1, p2) || 1, tilt: tilt(p1, p2), mid,   // выбор мог смениться
+        scale: node.scaleX(), rotation: node.rotation(),
+        pos: { x: node.x(), y: node.y() }
+      };
+      return;
+    }
+
+    const k = gap(p1, p2) / grab.gap;
+    node.scaleX(grab.scale * k);
+    node.scaleY(grab.scale * k);
+    node.rotation(grab.rotation + (tilt(p1, p2) - grab.tilt));
+    node.x(grab.pos.x + (mid.x - grab.mid.x));
+    node.y(grab.pos.y + (mid.y - grab.mid.y));
+    layer.batchDraw();
+  });
+
+  function endGrab() {
+    if (!grab) return;
+    grab.node.draggable(true);
+    grab = null;
+  }
+  stage.on('touchend', endGrab);
+  stage.on('touchcancel', endGrab);
 
   /**
    * Палитра фона открывается окном, а не разворачивается в строке под

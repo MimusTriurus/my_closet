@@ -1,6 +1,6 @@
 // Настройки: резервная копия — экспорт и импорт всего гардероба одним JSON.
 // В приложении это Google Drive; в прототипе — обычный файл, логика та же.
-import { fill, h, openModal, toast, busy, pluralWord } from './ui.js';
+import { fill, h, openModal, toast, busy, pluralWord, alertDialog, nItems, nOutfits } from './ui.js';
 import { dbAll, dbPut, dbClear, STORES } from './db.js';
 import { state, loadAll, emit, closetCount, countInSystem, archivedItems } from './state.js';
 
@@ -35,11 +35,68 @@ async function exportAll() {
   toast('Копия сохранена');
 }
 
-async function importAll(file) {
+/** Формат копии. Файл новее этого числа мы читать не умеем — и не делаем вид. */
+const DUMP_VERSION = 1;
+
+/**
+ * Разбор копии и разговор перед заменой.
+ *
+ * Восстановление — единственное необратимое действие в приложении: оно
+ * стирает всё, что есть сейчас. Поэтому сначала читаем файл (ничего не
+ * трогая), показываем, что в нём и что заменится, и предлагаем сохранить
+ * текущее состояние — одной кнопкой, не отправляя человека в меню.
+ */
+async function askRestore(file) {
+  let dump;
+  try {
+    dump = JSON.parse(await file.text());
+    if (!dump.stores) throw new Error('bad format');
+  } catch (e) {
+    console.error(e);
+    return toast('Не удалось прочитать файл', 3200);
+  }
+  if ((dump.version || 1) > DUMP_VERSION) {
+    return alertDialog(
+      'Эта копия сделана более новой версией приложения. Обновите приложение и попробуйте снова.',
+      'Копия новее приложения');
+  }
+
+  const has = s => (dump.stores[s] || []).length;
+  const made = dump.createdAt ? new Date(dump.createdAt).toLocaleDateString('ru-RU') : null;
+  const saveBtn = h('button', { class: 'btn block' }, '⬇️ Сначала сохранить текущую копию');
+  const note = h('p', { class: 'muted small', style: { margin: '10px 0 0' } },
+    'Советуем сохранить то, что есть сейчас, — если копия окажется не той, вернуться будет не к чему.');
+
+  const m = openModal({
+    title: 'Восстановить из копии?',
+    body: h('div', {},
+      h('p', { style: { margin: '4px 0 10px' } },
+        `В файле: ${nItems(has('items'))}, ${nOutfits(has('outfits'))}, `
+        + `поездок ${has('trips')}${made ? `. Копия от ${made}` : ''}.`),
+      // считаем все вещи, а не только гардероб: заменится и то, что лежит
+      // на рабочих полках и в архиве, — сравнивать надо одно с одним
+      h('p', { class: 'warn-line', style: { margin: '0 0 2px' } },
+        `Всё, что сейчас в приложении (${nItems(state.items.length)}, ${nOutfits(state.outfits.length)}), `
+        + 'будет заменено. Отменить это нельзя.'),
+      saveBtn, note
+    ),
+    foot: [
+      h('button', { class: 'btn', onclick: () => m.close() }, 'Отмена'),
+      h('button', { class: 'btn danger', onclick: () => { m.close(); importAll(dump); } }, 'Восстановить')
+    ]
+  });
+
+  saveBtn.onclick = async () => {
+    saveBtn.disabled = true;
+    await exportAll();
+    saveBtn.textContent = '✓ Копия сохранена';
+    note.textContent = 'Теперь можно восстанавливать: текущее состояние сохранено в файл.';
+  };
+}
+
+async function importAll(dump) {
   busy(true, 'Восстанавливаю…');
   try {
-    const dump = JSON.parse(await file.text());
-    if (!dump.stores) throw new Error('bad format');
     for (const s of STORES) {
       await dbClear(s);
       const fields = BLOB_FIELDS[s] || [];
@@ -54,14 +111,14 @@ async function importAll(file) {
     toast('Данные восстановлены');
   } catch (e) {
     console.error(e);
-    toast('Не удалось прочитать файл');
+    toast('Не удалось восстановить копию', 3200);
   } finally { busy(false); }
 }
 
 export function openSettings() {
   const fileInput = h('input', {
     type: 'file', accept: 'application/json', style: { display: 'none' },
-    onchange: e => { const f = e.target.files[0]; if (f) importAll(f); e.target.value = ''; }
+    onchange: e => { const f = e.target.files[0]; if (f) askRestore(f); e.target.value = ''; }
   });
 
   openModal({

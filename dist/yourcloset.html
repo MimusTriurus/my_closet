@@ -343,7 +343,21 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent-soft);bor
 .tool-opts{padding:8px 12px;background:var(--surface);border-top:1px solid var(--line);font-size:12px}
 
 /* ---------- outfit editor ---------- */
-#stage-host{background:var(--surface-2);flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden}
+/* Лист прижат к верху: место под ним пойдёт под инструменты, а сверху оно
+   только отодвигало бы работу от глаз. Рамка обязательна — без неё, когда
+   фон образа совпадает по цвету с окружением, край листа не виден и вещь
+   у границы кажется пропавшей */
+#stage-host{
+  background:var(--surface-2);flex:1;display:flex;
+  align-items:flex-start;justify-content:center;overflow:hidden;padding-top:10px
+}
+#stage-host .konvajs-content{
+  /* рамка заметно темнее обычных линий интерфейса: её задача — отделить лист
+     от окружения даже тогда, когда они одного цвета, иначе вещь у края
+     выглядит пропавшей. Тень одна этого не делает */
+  border:1px solid rgba(36,31,28,.28);border-radius:var(--r-sm);overflow:hidden;
+  box-shadow:0 2px 10px rgba(36,31,28,.10)
+}
 .palette-row{display:flex;gap:8px;overflow-x:auto;padding:8px 0;scrollbar-width:none}
 .palette-row::-webkit-scrollbar{display:none}
 
@@ -3355,9 +3369,15 @@ async function openOutfitEditor(existing, isCopy = false) {
   });
   layer.add(tr);
 
+  /**
+   * Лист вписывается в свободную область и прижат к её верху: пустое место
+   * внизу пригодится под инструменты, а сверху оно только отодвигало бы
+   * работу от глаз. PAD — поле вокруг листа, одинаковое сверху и с боков.
+   */
+  const PAD = 10;
   function fit() {
     const r = host.getBoundingClientRect();
-    const s = Math.min(r.width / SW, r.height / SH) * 0.96;
+    const s = Math.min((r.width - PAD * 2) / SW, (r.height - PAD * 2) / SH);
     stage.width(SW * s); stage.height(SH * s); stage.scale({ x: s, y: s });
     stage.batchDraw();
     return s;

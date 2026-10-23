@@ -66,9 +66,15 @@ export async function openOutfitEditor(existing, isCopy = false) {
   });
   layer.add(tr);
 
+  /**
+   * Лист вписывается в свободную область и прижат к её верху: пустое место
+   * внизу пригодится под инструменты, а сверху оно только отодвигало бы
+   * работу от глаз. PAD — поле вокруг листа, одинаковое сверху и с боков.
+   */
+  const PAD = 10;
   function fit() {
     const r = host.getBoundingClientRect();
-    const s = Math.min(r.width / SW, r.height / SH) * 0.96;
+    const s = Math.min((r.width - PAD * 2) / SW, (r.height - PAD * 2) / SH);
     stage.width(SW * s); stage.height(SH * s); stage.scale({ x: s, y: s });
     stage.batchDraw();
     return s;

@@ -316,14 +316,12 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent-soft);bor
   border:1px solid rgba(36,31,28,.28);border-radius:var(--r-sm);overflow:hidden;
   box-shadow:0 2px 10px rgba(36,31,28,.10)
 }
-.ed-hint{
-  flex:none;margin:0;padding:8px 14px 10px;
-  color:var(--muted);font-size:12px;line-height:1.35
+.hint-list{margin:4px 0 0;padding:0;list-style:none;font-size:13.5px;line-height:1.45}
+.hint-list li{position:relative;padding-left:16px;margin-bottom:10px}
+.hint-list li::before{
+  content:'';position:absolute;left:2px;top:8px;width:5px;height:5px;
+  border-radius:50%;background:var(--accent)
 }
-.ed-hint .section-title{margin:0 0 4px}
-.ed-hint ul{margin:0;padding:0;list-style:none}
-.ed-hint li{position:relative;padding-left:12px;margin-bottom:3px}
-.ed-hint li::before{content:'·';position:absolute;left:3px;top:-1px;font-weight:700}
 .palette-row{display:flex;gap:8px;overflow-x:auto;padding:8px 0;scrollbar-width:none}
 .palette-row::-webkit-scrollbar{display:none}
 

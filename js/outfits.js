@@ -33,20 +33,22 @@ export async function openOutfitEditor(existing, isCopy = false) {
   const toolbar = h('div', { class: 'tools' });
   const opts = h('div', { class: 'tool-opts' });
   /**
-   * Подсказки показываются все сразу, а не по очереди: сменяющаяся строка
-   * сообщает только то, что человек уже делает, и ничего не говорит о том,
-   * чего он ещё не пробовал. Здесь же виден весь набор приёмов.
+   * Подсказки живут в отдельном окне, а не на экране редактора: все сразу
+   * они занимали треть высоты листа, а лист здесь — главное. Кнопка рядом
+   * с палитрой: там есть место и её видно, не заслоняя работу.
    */
   const HINTS = [
     'Нажмите «Вещи», чтобы добавить вещь на лист',
     'Коснитесь вещи, чтобы переместить её на верхний слой',
     'Коснитесь верхней вещи и нажмите «На нижний слой», чтобы перенести верхнюю вещь на нижний слой',
     'Удерживайте вещь пальцем, чтобы сместить',
-    'Удерживайте вещь за уголки и смещайте пальцы, чтобы менять размер и поворот'
+    'Удерживайте вещь за уголки и смещайте пальцы, чтобы менять размер и поворот',
+    'Коснитесь вещи и нажмите «Убрать», чтобы убрать её с листа — в гардеробе вещь останется'
   ];
-  const hint = h('div', { class: 'ed-hint' },
-    h('div', { class: 'section-title' }, 'Подсказки'),
-    h('ul', {}, HINTS.map(t => h('li', {}, t))));
+  const openHints = () => openModal({
+    title: 'Подсказки',
+    body: h('ul', { class: 'hint-list' }, HINTS.map(t => h('li', {}, t)))
+  });
 
   // редактор отдаёт сохранённый образ наружу: календарю нужно положить
   // на день именно копию, которую пользователь только что собрал
@@ -57,7 +59,7 @@ export async function openOutfitEditor(existing, isCopy = false) {
     title: !existing || isCopy ? 'Новый образ' : 'Редактировать образ',
     full: true,
     body: h('div', { style: { display: 'flex', flexDirection: 'column', height: '100%', margin: '-12px' } },
-      host, opts, toolbar, hint),
+      host, opts, toolbar),
     onClose: () => settle(saved),
     foot: [
       h('button', { class: 'btn', onclick: () => modal.close() }, 'Отмена'),
@@ -231,7 +233,9 @@ export async function openOutfitEditor(existing, isCopy = false) {
   // показанная однажды, она оставалась насовсем и вытесняла подсказку —
   // кнопка после этого выглядела ничего не делающей. Места хватает обеим
   fill(opts,
-    h('div', { class: 'section-title', style: { margin: '0 0 2px' } }, 'Фон листа'),
+    h('div', { class: 'row', style: { gap: '8px', marginBottom: '2px' } },
+      h('span', { class: 'section-title spacer', style: { margin: '0' } }, 'Фон листа'),
+      h('button', { class: 'btn btn-sm', onclick: openHints }, '❔ Подсказки')),
     h('div', { class: 'palette-row' }, BGS.map(b =>
       h('button', {
         class: 'swatch' + (outfit.bg === b.id ? ' sel' : ''),

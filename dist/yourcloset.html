@@ -358,14 +358,12 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent-soft);bor
   border:1px solid rgba(36,31,28,.28);border-radius:var(--r-sm);overflow:hidden;
   box-shadow:0 2px 10px rgba(36,31,28,.10)
 }
-.ed-hint{
-  flex:none;margin:0;padding:8px 14px 10px;
-  color:var(--muted);font-size:12px;line-height:1.35
+.hint-list{margin:4px 0 0;padding:0;list-style:none;font-size:13.5px;line-height:1.45}
+.hint-list li{position:relative;padding-left:16px;margin-bottom:10px}
+.hint-list li::before{
+  content:'';position:absolute;left:2px;top:8px;width:5px;height:5px;
+  border-radius:50%;background:var(--accent)
 }
-.ed-hint .section-title{margin:0 0 4px}
-.ed-hint ul{margin:0;padding:0;list-style:none}
-.ed-hint li{position:relative;padding-left:12px;margin-bottom:3px}
-.ed-hint li::before{content:'·';position:absolute;left:3px;top:-1px;font-weight:700}
 .palette-row{display:flex;gap:8px;overflow-x:auto;padding:8px 0;scrollbar-width:none}
 .palette-row::-webkit-scrollbar{display:none}
 
@@ -3344,20 +3342,22 @@ async function openOutfitEditor(existing, isCopy = false) {
   const toolbar = h('div', { class: 'tools' });
   const opts = h('div', { class: 'tool-opts' });
   /**
-   * Подсказки показываются все сразу, а не по очереди: сменяющаяся строка
-   * сообщает только то, что человек уже делает, и ничего не говорит о том,
-   * чего он ещё не пробовал. Здесь же виден весь набор приёмов.
+   * Подсказки живут в отдельном окне, а не на экране редактора: все сразу
+   * они занимали треть высоты листа, а лист здесь — главное. Кнопка рядом
+   * с палитрой: там есть место и её видно, не заслоняя работу.
    */
   const HINTS = [
     'Нажмите «Вещи», чтобы добавить вещь на лист',
     'Коснитесь вещи, чтобы переместить её на верхний слой',
     'Коснитесь верхней вещи и нажмите «На нижний слой», чтобы перенести верхнюю вещь на нижний слой',
     'Удерживайте вещь пальцем, чтобы сместить',
-    'Удерживайте вещь за уголки и смещайте пальцы, чтобы менять размер и поворот'
+    'Удерживайте вещь за уголки и смещайте пальцы, чтобы менять размер и поворот',
+    'Коснитесь вещи и нажмите «Убрать», чтобы убрать её с листа — в гардеробе вещь останется'
   ];
-  const hint = h('div', { class: 'ed-hint' },
-    h('div', { class: 'section-title' }, 'Подсказки'),
-    h('ul', {}, HINTS.map(t => h('li', {}, t))));
+  const openHints = () => openModal({
+    title: 'Подсказки',
+    body: h('ul', { class: 'hint-list' }, HINTS.map(t => h('li', {}, t)))
+  });
 
   // редактор отдаёт сохранённый образ наружу: календарю нужно положить
   // на день именно копию, которую пользователь только что собрал
@@ -3368,7 +3368,7 @@ async function openOutfitEditor(existing, isCopy = false) {
     title: !existing || isCopy ? 'Новый образ' : 'Редактировать образ',
     full: true,
     body: h('div', { style: { display: 'flex', flexDirection: 'column', height: '100%', margin: '-12px' } },
-      host, opts, toolbar, hint),
+      host, opts, toolbar),
     onClose: () => settle(saved),
     foot: [
       h('button', { class: 'btn', onclick: () => modal.close() }, 'Отмена'),
@@ -3542,7 +3542,9 @@ async function openOutfitEditor(existing, isCopy = false) {
   // показанная однажды, она оставалась насовсем и вытесняла подсказку —
   // кнопка после этого выглядела ничего не делающей. Места хватает обеим
   fill(opts,
-    h('div', { class: 'section-title', style: { margin: '0 0 2px' } }, 'Фон листа'),
+    h('div', { class: 'row', style: { gap: '8px', marginBottom: '2px' } },
+      h('span', { class: 'section-title spacer', style: { margin: '0' } }, 'Фон листа'),
+      h('button', { class: 'btn btn-sm', onclick: openHints }, '❔ Подсказки')),
     h('div', { class: 'palette-row' }, BGS.map(b =>
       h('button', {
         class: 'swatch' + (outfit.bg === b.id ? ' sel' : ''),

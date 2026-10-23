@@ -2283,7 +2283,7 @@ async function startAddItem() {
  * Поле, значение которого выбирается из общего списка. Пустое не прячем:
  * пустая строка напоминает, что её стоит заполнить.
  */
-function listField(label, key, getId, setId) {
+function listField(label, key, getId, setId, empty = 'не указано') {
   const btn = h('button', {
     class: 'btn block pick', onclick: async () => {
       const id = await openListPicker(key, { selected: getId() });
@@ -2294,7 +2294,9 @@ function listField(label, key, getId, setId) {
   });
   const paint = () => {
     const name = entryName(key, getId());
-    fill(btn, h('span', { class: name ? '' : 'muted' }, name || 'не указано'));
+    // род подписи задаётся снаружи: «не указан» у производителя,
+    // «не указана» у цены — одного слова на все поля не существует
+    fill(btn, h('span', { class: name ? '' : 'muted' }, name || empty));
   };
   paint();
   return h('label', { class: 'field' }, h('span', {}, label), btn);
@@ -2555,7 +2557,7 @@ function openItemForm(item, isNew = false) {
         h('div', { class: 'section-title' }, 'Фон карточки'), bgRow,
         h('label', { class: 'field' }, h('span', {}, 'Категория'), catSel),
         h('label', { class: 'field' }, h('span', {}, 'Подкатегория'), subSel),
-        listField('Производитель', 'brands', () => brandId, v => { brandId = v; }),
+        listField('Производитель', 'brands', () => brandId, v => { brandId = v; }, 'не указан'),
         colorsGroup(colorIds, suggest),
         compositionGroup('Состав', mat.main),
         compositionGroup('Подкладка', mat.lining),

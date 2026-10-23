@@ -1,5 +1,5 @@
 // Точка входа: загрузка состояния, переключение вкладок, перерисовка.
-import { fill, qs, qsa, h, toast } from './ui.js';
+import { fill, qs, qsa, h, toast, setTabHandler } from './ui.js';
 import { loadAll, subscribe, notices } from './state.js';
 import { renderCloset, closetNav, startAddItem, goRoot } from './closet.js';
 import { renderOutfits, outfitsNav, goOutfitsRoot } from './outfits.js';
@@ -56,6 +56,8 @@ function setTab(tab) {
 }
 
 async function boot() {
+  // другие модули просят переключить вкладку через ui.js — см. goTab
+  setTabHandler(tab => { if (TABS[tab] && tab !== current) setTab(tab); });
   await loadAll();
   subscribe(() => render());
   // Нажатие на уже открытую вкладку возвращает к её началу — так из

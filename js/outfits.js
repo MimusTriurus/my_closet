@@ -1,7 +1,7 @@
 // Вкладка «Образы»: папки с категориями, редактор образа на Konva, рандомайзер.
 import {
   fill, h, qs, urlFor, toast, openModal, confirmDialog, promptDialog, actionSheet, busy,
-  plural, nItems, nOutfits
+  plural, nItems, nOutfits, goTab
 } from './ui.js';
 import {
   state, saveOutfit, deleteOutfit, outfitById, itemById, visibleItems, emit,
@@ -549,7 +549,9 @@ function renderOutfitCard(root, o) {
     h('div', { class: 'section-title' }, 'Вещи в образе'),
     items.length ? h('div', { class: 'grid' }, items.map(it => h('div', {
       class: 'tile' + (it.archived ? ' gone' : ''), style: { background: bgCss(it.bg) },
-      onclick: () => { closeOutfitCard(); openItemCard(it); }
+      // карточка вещи живёт в «Гардеробе» — туда и уходим, иначе нажатие
+      // просто закрывало образ и выглядело как ничего не произошло
+      onclick: () => { goTab('closet'); openItemCard(it, true); }
     }, h('img', { src: urlFor(it.img) }))))
       : h('p', { class: 'muted small' }, 'Вещей из гардероба в образе не осталось.'),
 

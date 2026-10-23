@@ -163,6 +163,16 @@ export function urlFor(blob) {
  * действие совершилось молча и его хочется вернуть, пока помнишь о нём.
  * Живёт столько же, сколько сама всплывашка: предложение, а не вопрос.
  */
+/* ---- переход на другую вкладку ----
+ * Вкладки переключает app.js, но просить об этом может любой модуль —
+ * например, «Образы», когда вещь из образа открывается карточкой в
+ * «Гардеробе». Прямой импорт сделал бы круг (app → closet → app),
+ * поэтому app регистрирует обработчик здесь.
+ */
+let tabHandler = null;
+export const setTabHandler = fn => { tabHandler = fn; };
+export const goTab = tab => tabHandler && tabHandler(tab);
+
 export function toast(msg, ms = 2000, action = null) {
   const t = h('div', { class: 'toast' }, msg);
   if (action) {

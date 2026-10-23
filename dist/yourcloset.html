@@ -760,6 +760,16 @@ function urlFor(blob) {
  * действие совершилось молча и его хочется вернуть, пока помнишь о нём.
  * Живёт столько же, сколько сама всплывашка: предложение, а не вопрос.
  */
+/* ---- переход на другую вкладку ----
+ * Вкладки переключает app.js, но просить об этом может любой модуль —
+ * например, «Образы», когда вещь из образа открывается карточкой в
+ * «Гардеробе». Прямой импорт сделал бы круг (app → closet → app),
+ * поэтому app регистрирует обработчик здесь.
+ */
+let tabHandler = null;
+const setTabHandler = fn => { tabHandler = fn; };
+const goTab = tab => tabHandler && tabHandler(tab);
+
 function toast(msg, ms = 2000, action = null) {
   const t = h('div', { class: 'toast' }, msg);
   if (action) {
@@ -3198,7 +3208,18 @@ function openItemForm(item, isNew = false) {
 // у какой вещи развёрнут нижний блок; при открытии карточки — ни у какой
 let cardOpen = null;
 
-function openItemCard(item) {
+/**
+ * `locate` — встать заодно и в ту папку, где вещь лежит. Нужно, когда
+ * карточку открывают из другой вкладки: иначе «‹» уводит туда, где
+ * гардероб был брошен в прошлый раз, а это к вещи отношения не имеет.
+ */
+function openItemCard(item, locate = false) {
+  if (locate) {
+    nav.all = false;
+    nav.archive = !!item.archived;
+    nav.catId = (item.archived ? item.arcCatId : item.catId) || null;
+    nav.subId = (item.archived ? item.arcSubId : item.subId) || null;
+  }
   nav.itemId = item.id;
   cardOpen = null;
   emit();
@@ -4457,7 +4478,9 @@ function renderOutfitCard(root, o) {
     h('div', { class: 'section-title' }, 'Вещи в образе'),
     items.length ? h('div', { class: 'grid' }, items.map(it => h('div', {
       class: 'tile' + (it.archived ? ' gone' : ''), style: { background: bgCss(it.bg) },
-      onclick: () => { closeOutfitCard(); openItemCard(it); }
+      // карточка вещи живёт в «Гардеробе» — туда и уходим, иначе нажатие
+      // просто закрывало образ и выглядело как ничего не произошло
+      onclick: () => { goTab('closet'); openItemCard(it, true); }
     }, h('img', { src: urlFor(it.img) }))))
       : h('p', { class: 'muted small' }, 'Вещей из гардероба в образе не осталось.'),
 
@@ -5251,6 +5274,8 @@ function setTab(tab) {
 }
 
 async function boot() {
+  // другие модули просят переключить вкладку через ui.js — см. goTab
+  setTabHandler(tab => { if (TABS[tab] && tab !== current) setTab(tab); });
   await loadAll();
   subscribe(() => render());
   // Нажатие на уже открытую вкладку возвращает к её началу — так из

@@ -426,7 +426,18 @@ export function openItemForm(item, isNew = false) {
 // у какой вещи развёрнут нижний блок; при открытии карточки — ни у какой
 let cardOpen = null;
 
-export function openItemCard(item) {
+/**
+ * `locate` — встать заодно и в ту папку, где вещь лежит. Нужно, когда
+ * карточку открывают из другой вкладки: иначе «‹» уводит туда, где
+ * гардероб был брошен в прошлый раз, а это к вещи отношения не имеет.
+ */
+export function openItemCard(item, locate = false) {
+  if (locate) {
+    nav.all = false;
+    nav.archive = !!item.archived;
+    nav.catId = (item.archived ? item.arcCatId : item.catId) || null;
+    nav.subId = (item.archived ? item.arcSubId : item.subId) || null;
+  }
   nav.itemId = item.id;
   cardOpen = null;
   emit();

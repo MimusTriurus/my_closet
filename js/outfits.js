@@ -10,7 +10,7 @@ import {
 } from './state.js';
 import { uid } from './db.js';
 import { BGS, bgById, bgCss } from './bgs.js';
-import { imageFromBlob } from './editor.js';
+import { imageFromBlob, webpSupported } from './editor.js';
 import { pickItems } from './picker.js';
 import { openCategoryManager, openSubManager } from './cats.js';
 import { OTHER, navRow, collageThumb, itemLabel, openItemCard } from './closet.js';
@@ -401,7 +401,13 @@ export async function openOutfitEditor(existing, isCopy = false) {
     // приложение выглядело зависшим.
     busy(true, 'Сохраняю образ…');
     try {
-      const url = stage.toDataURL({ pixelRatio: 1 / viewScale });
+      // лист непрозрачен, но WebP и здесь легче PNG в несколько раз
+      const webp = await webpSupported();
+      const url = stage.toDataURL({
+        pixelRatio: 1 / viewScale,
+        mimeType: webp ? 'image/webp' : 'image/png',
+        quality: 0.9
+      });
       outfit.preview = await dataURLtoBlob(url);
       await saveOutfit(outfit);
       saved = outfit;

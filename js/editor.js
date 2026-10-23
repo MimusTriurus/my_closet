@@ -17,8 +17,44 @@ export function imageFromBlob(blob) {
   });
 }
 
-const canvasToBlob = (c, type = 'image/png') =>
-  new Promise(res => c.toBlob(res, type, 0.92));
+const canvasToBlob = (c, type = 'image/png', q = 0.92) =>
+  new Promise(res => c.toBlob(res, type, q));
+
+/* ---------- в чём храним снимки ----------
+ * Вырезанная вещь в PNG весит 400–900 КБ, та же в WebP — 40–130 КБ: в
+ * семь-одиннадцать раз меньше при той же прозрачности. На гардеробе из
+ * полутора сотен вещей это разница между 75 и 9 мегабайтами — и на
+ * телефоне, и в резервной копии.
+ *
+ * Весь выигрыш — в сжатии с потерями: WebP без потерь даёт всего ~1,6 раза.
+ * Качество 0.9 выбрано ради краёв выреза: там, где вокруг прозрачность,
+ * кайма заметнее всего.
+ *
+ * Поддержку не угадываем по названию движка, а спрашиваем у него самого:
+ * старый WebView молча вернёт PNG вместо WebP, и мы бы считали, что храним
+ * одно, а хранили другое.
+ */
+const WEBP_Q = 0.9;
+let webpProbe = null;
+export const webpSupported = () => webpProbe || (webpProbe = new Promise(res => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 1;
+  try { c.toBlob(b => res(!!b && b.type === 'image/webp'), 'image/webp', WEBP_Q); }
+  catch (e) { res(false); }
+}));
+
+/**
+ * Кодирует холст: WebP, где движок умеет, иначе прежнее.
+ * `alpha` — нужна ли прозрачность: от неё зависит только запасной вариант
+ * (PNG её хранит, JPEG нет).
+ */
+export async function encodeCanvas(c, { alpha = true, quality = WEBP_Q } = {}) {
+  if (await webpSupported()) {
+    const b = await canvasToBlob(c, 'image/webp', quality);
+    if (b && b.type === 'image/webp') return b;
+  }
+  return canvasToBlob(c, alpha ? 'image/png' : 'image/jpeg', quality);
+}
 
 /**
  * Ужимает снимок перед сохранением: фото с телефона весит 4–6 МБ, а в карточке
@@ -33,8 +69,9 @@ export async function downscaleBlob(blob, max = 1600) {
   c.width = Math.round(w * scale);
   c.height = Math.round(h * scale);
   c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-  const png = blob.type === 'image/png';
-  return new Promise(r => c.toBlob(r, png ? 'image/png' : 'image/jpeg', 0.88));
+  // прозрачность может быть у PNG и у WebP — её бережём, остальное в JPEG
+  const alpha = blob.type === 'image/png' || blob.type === 'image/webp';
+  return encodeCanvas(c, { alpha, quality: 0.88 });
 }
 
 /** Обрезает прозрачные поля вокруг вещи. */
@@ -489,7 +526,7 @@ export async function openImageEditor(source, { autoAI = false } = {}) {
   async function finish() {
     doneBtn.disabled = true;
     const trimmed = trimTransparent(work);
-    const blob = await canvasToBlob(trimmed);
+    const blob = await encodeCanvas(trimmed);
     const r = resolveFn; resolveFn = null;
     modal.close();
     r(blob);

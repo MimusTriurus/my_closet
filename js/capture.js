@@ -1,6 +1,7 @@
 // Источники изображений: галерея, камера, а также «пипетка» цвета с камеры.
 import { h, qs, openModal, toast } from './ui.js';
 import { rgbToHex } from './color.js';
+import { encodeCanvas } from './editor.js';
 
 export function pickImageFile() {
   return new Promise(res => {
@@ -64,11 +65,14 @@ export function captureFromCamera() {
       foot: [
         h('button', { class: 'btn', onclick: () => modal.close() }, 'Отмена'),
         h('button', {
-          class: 'btn primary', onclick: () => {
+          class: 'btn primary', onclick: async () => {
             const c = document.createElement('canvas');
             c.width = video.videoWidth; c.height = video.videoHeight;
             c.getContext('2d').drawImage(video, 0, 0);
-            c.toBlob(b => { done = true; stop(); modal.close(); res(b); }, 'image/png');
+            // фотография в PNG весила в разы больше нужного: прозрачности
+            // в кадре с камеры нет, хранить его без потерь незачем
+            const b = await encodeCanvas(c, { alpha: false });
+            done = true; stop(); modal.close(); res(b);
           }
         }, '📸 Снять')
       ],

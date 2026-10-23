@@ -24,10 +24,15 @@ const pickRow = ({ label, note, onclick, muted, back }) => h('div', {
  * Архивные вещи сюда не попадают: «Гардероб» — это то, что есть на руках.
  * Архивное приходит в поездку другим путём — из прошлой поездки или образа.
  */
-export function pickItems({ title = 'Выбрать вещи', selected = [], multi = true } = {}) {
+export function pickItems({ title = 'Выбрать вещи', selected = [], multi = true, pool = null } = {}) {
   return new Promise(res => {
+    // `pool` — уже отобранный набор (например, вещи нужного цвета). Папки
+    // при этом остаются: искать глазами удобнее там, где привычно
+    const all = () => pool || visibleItems();
     const sel = new Set(selected);
-    let catId = null, subId = null;
+    // с готовым набором сразу показываем сетку: папок всегда больше, чем
+    // отобранного, и ходить по пустым незачем. Вернуться к ним можно «‹»
+    let catId = pool ? ALL : null, subId = null;
     let done = false;
 
     const body = h('div', {});
@@ -38,11 +43,11 @@ export function pickItems({ title = 'Выбрать вещи', selected = [], mu
     }, 'Готово');
 
     const catOf = id => closetCats().find(c => c.id === id) || null;
-    const inCat = id => visibleItems().filter(i => (i.catId || null) === (id === NO_CAT ? null : id));
+    const inCat = id => all().filter(i => (i.catId || null) === (id === NO_CAT ? null : id));
     const subsOf = cat => cat?.subs || [];
 
     function listed() {
-      if (catId === ALL) return visibleItems();
+      if (catId === ALL) return all();
       const cat = catOf(catId);
       const pool = inCat(catId);
       if (!subId) return pool;
@@ -76,7 +81,7 @@ export function pickItems({ title = 'Выбрать вещи', selected = [], mu
         return fill(body,
           h('div', { class: 'list' },
             pickRow({
-              label: 'Все вещи', note: nItems(visibleItems().length),
+              label: 'Все вещи', note: nItems(all().length),
               onclick: () => go(ALL)
             }),
             ...cats.map(c => pickRow({
@@ -96,7 +101,9 @@ export function pickItems({ title = 'Выбрать вещи', selected = [], mu
       const cat = catOf(catId);
       const subs = cat ? subsOf(cat) : [];
       const sublessN = cat ? inCat(cat.id).filter(i => !subs.some(sb => sb.id === i.subId)).length : 0;
-      titleEl.textContent = catId === ALL ? 'Все вещи'
+      // с готовым набором «Все вещи» — неправда: их там не все, а отобранные.
+      // Заголовок остаётся тем, с которым выбор открыли
+      titleEl.textContent = catId === ALL ? (pool ? title : 'Все вещи')
         : catId === NO_CAT ? 'Без категории'
           : subId ? (subId === NO_SUB ? 'Другое' : subs.find(sb => sb.id === subId)?.name || cat.name)
             : cat?.name || title;
@@ -150,7 +157,9 @@ export function pickItems({ title = 'Выбрать вещи', selected = [], mu
 export function pickOutfits({ title = 'Выбрать образы', selected = [], multi = true } = {}) {
   return new Promise(res => {
     const sel = new Set(selected);
-    let catId = null, subId = null;
+    // с готовым набором сразу показываем сетку: папок всегда больше, чем
+    // отобранного, и ходить по пустым незачем. Вернуться к ним можно «‹»
+    let catId = pool ? ALL : null, subId = null;
     let done = false;
 
     const body = h('div', {});

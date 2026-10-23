@@ -5,7 +5,7 @@ import {
 } from './ui.js';
 import {
   state, saveOutfit, deleteOutfit, outfitById, itemById, visibleItems, emit,
-  catById, subById, outfitCats, countInOutfitCat, SCOPE_OUTFIT,
+  catById, subById, outfitCats, countInOutfitCat, SCOPE_OUTFIT, listItems,
   outfitItems, archivedInOutfit
 } from './state.js';
 import { uid } from './db.js';
@@ -179,30 +179,69 @@ export async function openOutfitEditor(existing, isCopy = false) {
     layer.batchDraw();
   }
 
-  async function randomize() {
-    // пока за кнопкой случайный подбор, и он стирает лист. Молча этого
-    // делать нельзя: собранное руками дороже случайного
-    if (layer.find('Image').length &&
-      !await confirmDialog('Собрать случайный образ? Всё, что на листе, будет убрано.', 'Собрать')) return;
-    const byCat = new Map();
-    for (const it of visibleItems()) {
-      if (!it.catId) continue;
-      if (!byCat.has(it.catId)) byCat.set(it.catId, []);
-      byCat.get(it.catId).push(it);
+  /**
+   * Подбор по цвету. Из всего, чем вещь описана, для образа важен только
+   * цвет: производитель и материал сочетаемости не определяют.
+   *
+   * Лист не стирается и ничего не выбирается за человека — отобранное
+   * уходит в обычный выбор вещей, где видно, что берёшь. Прежний случайный
+   * подбор делал обратное: стирал собранное и ставил три случайные вещи.
+   */
+  async function addByColor() {
+    // цвета, за которыми ничего не стоит, предлагать незачем: такой выбор
+    // ведёт в пустую сетку
+    const pool = visibleItems();
+    const colors = listItems('colors')
+      .map(c => ({ ...c, n: pool.filter(i => (i.colorIds || []).includes(c.id)).length }))
+      .filter(c => c.n);
+    if (!colors.length) {
+      return toast('Цвета у вещей ещё не отмечены — их ставят в карточке вещи', 3600);
     }
-    if (!byCat.size) return toast('Сначала добавьте вещи');
-    layer.find('Image').forEach(n => n.destroy());
-    tr.nodes([]);
-    const cats = [...byCat.keys()].sort(() => Math.random() - .5).slice(0, 3);
-    let i = 0;
-    for (const c of cats) {
-      const pool = byCat.get(c);
-      const it = pool[Math.floor(Math.random() * pool.length)];
-      await addItemNode(it.id, { y: SH * (0.22 + 0.27 * i), x: SW / 2 });
-      i++;
-    }
-    layer.batchDraw();
-    toast('Случайный образ');
+
+    const picked = new Set();
+    const count = () => pool.filter(i => (i.colorIds || []).some(id => picked.has(id))).length;
+    const goBtn = h('button', { class: 'btn primary', disabled: true }, 'Выбрать вещи');
+    const grid = h('div', { class: 'color-pick' });
+
+    const render = () => {
+      fill(grid, ...colors.map(c => h('button', {
+        class: 'color-opt' + (picked.has(c.id) ? ' sel' : ''),
+        onclick: () => { picked.has(c.id) ? picked.delete(c.id) : picked.add(c.id); render(); }
+      },
+        h('span', { class: 'dot', style: { background: c.hex } }),
+        h('b', {}, c.name),
+        h('span', { class: 'muted small' }, nItems(c.n))
+      )));
+      const n = count();
+      goBtn.disabled = !n;
+      goBtn.textContent = n ? `Выбрать вещи · ${n}` : 'Выбрать вещи';
+    };
+    render();
+
+    const m = openModal({
+      title: 'Подбор по цвету',
+      body: [
+        h('p', { class: 'hint-top' }, 'Отметьте цвета — покажем вещи, в которых они есть.'),
+        grid
+      ],
+      foot: [h('button', { class: 'btn', onclick: () => m.close() }, 'Отмена'), goBtn]
+    });
+
+    goBtn.onclick = async () => {
+      const list = pool.filter(i => (i.colorIds || []).some(id => picked.has(id)));
+      m.close();
+      const ids = await pickItems({ title: 'Вещи по цвету', pool: list });
+      if (!ids || !ids.length) return;
+      let i = 0;
+      for (const id of ids) {
+        const n = await addItemNode(id, {
+          x: SW / 2 + (i % 2 ? 70 : -70), y: SH * (0.25 + 0.22 * Math.floor(i / 2))
+        });
+        i++;
+        if (n) tr.nodes([n]);
+      }
+      layer.batchDraw();
+    };
   }
 
   function selected() { return tr.nodes()[0] || null; }
@@ -290,10 +329,7 @@ export async function openOutfitEditor(existing, isCopy = false) {
   const TOOLS = [
     { ic: '➕', label: 'Вещи', fn: addItems },
     { ic: '🎨', label: 'Фон', fn: openBg },
-    // название на вырост: кнопка должна собирать вещи по фильтру (например,
-    // все синие и красные — проверить сочетаемость). Пока за ним случайный
-    // подбор, поэтому он и спрашивает, прежде чем стереть собранное
-    { ic: '🎯', label: 'По фильтру', fn: randomize },
+    { ic: '🌈', label: 'По цвету', fn: addByColor },
     // одна кнопка вместо двух стрелок: наверх поднимает касание, а вниз
     // пальцем не покажешь — для этого и кнопка
     {
@@ -459,13 +495,8 @@ function renderOutfitCard(root, o) {
     // как образ попадёт в календарь и добавит ей носку, которой не было
     gone.length ? h('p', { class: 'warn-line' }, goneText(gone)) : null,
 
-    h('div', { class: 'section-title' }, 'Вещи в образе'),
-    items.length ? h('div', { class: 'grid' }, items.map(it => h('div', {
-      class: 'tile' + (it.archived ? ' gone' : ''), style: { background: bgCss(it.bg) },
-      onclick: () => { closeOutfitCard(); openItemCard(it); }
-    }, h('img', { src: urlFor(it.img) }))))
-      : h('p', { class: 'muted small' }, 'Вещей из гардероба в образе не осталось.'),
-
+    // Действия стоят выше списка вещей: за ними приходят, а список —
+    // справка. На телефоне до кнопок иначе нужно было прокручивать экран
     h('div', { class: 'card-actions' },
       h('button', {
         class: 'btn', onclick: async () => {
@@ -479,7 +510,15 @@ function renderOutfitCard(root, o) {
       h('button', { class: 'btn', onclick: () => copyOutfit(o) }, '⧉ Копия'),
       h('button', { class: 'btn', onclick: () => openOutfitEditor(o) }, '✎ Изменить'),
       h('button', { class: 'btn danger', onclick: () => removeOutfit(o) }, '🗑')
-    )
+    ),
+
+    h('div', { class: 'section-title' }, 'Вещи в образе'),
+    items.length ? h('div', { class: 'grid' }, items.map(it => h('div', {
+      class: 'tile' + (it.archived ? ' gone' : ''), style: { background: bgCss(it.bg) },
+      onclick: () => { closeOutfitCard(); openItemCard(it); }
+    }, h('img', { src: urlFor(it.img) }))))
+      : h('p', { class: 'muted small' }, 'Вещей из гардероба в образе не осталось.'),
+
   );
   root.style.paddingBottom = '';
 }

@@ -342,6 +342,18 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent-soft);bor
   content:'';position:absolute;left:2px;top:8px;width:5px;height:5px;
   border-radius:50%;background:var(--accent)
 }
+/* выбор цветов для подбора: строка на цвет — нужно и название, и сколько
+   за ним вещей, одним кружком этого не сказать */
+.color-pick{display:flex;flex-direction:column;gap:8px}
+.color-opt{
+  display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+  padding:10px;border:1px solid var(--line);border-radius:var(--r);
+  background:var(--surface);font-size:14px;
+}
+.color-opt.sel{border-color:var(--accent);background:var(--surface-2)}
+.color-opt b{flex:1;font-weight:600}
+.color-opt .dot{width:20px;height:20px;border-radius:50%;border:1px solid var(--line);flex:0 0 auto}
+
 /* палитра в окне: свотчи крупные, в несколько рядов — попасть пальцем */
 .palette-grid{display:flex;flex-wrap:wrap;gap:10px;padding:6px 0 2px}
 .palette-grid .swatch{width:52px;height:52px}

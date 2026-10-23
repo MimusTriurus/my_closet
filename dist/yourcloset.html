@@ -389,6 +389,18 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent-soft);bor
   content:'';position:absolute;left:2px;top:8px;width:5px;height:5px;
   border-radius:50%;background:var(--accent)
 }
+/* выбор цветов для подбора: строка на цвет — нужно и название, и сколько
+   за ним вещей, одним кружком этого не сказать */
+.color-pick{display:flex;flex-direction:column;gap:8px}
+.color-opt{
+  display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+  padding:10px;border:1px solid var(--line);border-radius:var(--r);
+  background:var(--surface);font-size:14px;
+}
+.color-opt.sel{border-color:var(--accent);background:var(--surface-2)}
+.color-opt b{flex:1;font-weight:600}
+.color-opt .dot{width:20px;height:20px;border-radius:50%;border:1px solid var(--line);flex:0 0 auto}
+
 /* палитра в окне: свотчи крупные, в несколько рядов — попасть пальцем */
 .palette-grid{display:flex;flex-wrap:wrap;gap:10px;padding:6px 0 2px}
 .palette-grid .swatch{width:52px;height:52px}
@@ -2496,10 +2508,15 @@ const pickRow = ({ label, note, onclick, muted, back }) => h('div', {
  * Архивные вещи сюда не попадают: «Гардероб» — это то, что есть на руках.
  * Архивное приходит в поездку другим путём — из прошлой поездки или образа.
  */
-function pickItems({ title = 'Выбрать вещи', selected = [], multi = true } = {}) {
+function pickItems({ title = 'Выбрать вещи', selected = [], multi = true, pool = null } = {}) {
   return new Promise(res => {
+    // `pool` — уже отобранный набор (например, вещи нужного цвета). Папки
+    // при этом остаются: искать глазами удобнее там, где привычно
+    const all = () => pool || visibleItems();
     const sel = new Set(selected);
-    let catId = null, subId = null;
+    // с готовым набором сразу показываем сетку: папок всегда больше, чем
+    // отобранного, и ходить по пустым незачем. Вернуться к ним можно «‹»
+    let catId = pool ? ALL : null, subId = null;
     let done = false;
 
     const body = h('div', {});
@@ -2510,11 +2527,11 @@ function pickItems({ title = 'Выбрать вещи', selected = [], multi = t
     }, 'Готово');
 
     const catOf = id => closetCats().find(c => c.id === id) || null;
-    const inCat = id => visibleItems().filter(i => (i.catId || null) === (id === NO_CAT ? null : id));
+    const inCat = id => all().filter(i => (i.catId || null) === (id === NO_CAT ? null : id));
     const subsOf = cat => cat?.subs || [];
 
     function listed() {
-      if (catId === ALL) return visibleItems();
+      if (catId === ALL) return all();
       const cat = catOf(catId);
       const pool = inCat(catId);
       if (!subId) return pool;
@@ -2548,7 +2565,7 @@ function pickItems({ title = 'Выбрать вещи', selected = [], multi = t
         return fill(body,
           h('div', { class: 'list' },
             pickRow({
-              label: 'Все вещи', note: nItems(visibleItems().length),
+              label: 'Все вещи', note: nItems(all().length),
               onclick: () => go(ALL)
             }),
             ...cats.map(c => pickRow({
@@ -2568,7 +2585,9 @@ function pickItems({ title = 'Выбрать вещи', selected = [], multi = t
       const cat = catOf(catId);
       const subs = cat ? subsOf(cat) : [];
       const sublessN = cat ? inCat(cat.id).filter(i => !subs.some(sb => sb.id === i.subId)).length : 0;
-      titleEl.textContent = catId === ALL ? 'Все вещи'
+      // с готовым набором «Все вещи» — неправда: их там не все, а отобранные.
+      // Заголовок остаётся тем, с которым выбор открыли
+      titleEl.textContent = catId === ALL ? (pool ? title : 'Все вещи')
         : catId === NO_CAT ? 'Без категории'
           : subId ? (subId === NO_SUB ? 'Другое' : subs.find(sb => sb.id === subId)?.name || cat.name)
             : cat?.name || title;
@@ -2622,7 +2641,9 @@ function pickItems({ title = 'Выбрать вещи', selected = [], multi = t
 function pickOutfits({ title = 'Выбрать образы', selected = [], multi = true } = {}) {
   return new Promise(res => {
     const sel = new Set(selected);
-    let catId = null, subId = null;
+    // с готовым набором сразу показываем сетку: папок всегда больше, чем
+    // отобранного, и ходить по пустым незачем. Вернуться к ним можно «‹»
+    let catId = pool ? ALL : null, subId = null;
     let done = false;
 
     const body = h('div', {});
@@ -4031,30 +4052,69 @@ async function openOutfitEditor(existing, isCopy = false) {
     layer.batchDraw();
   }
 
-  async function randomize() {
-    // пока за кнопкой случайный подбор, и он стирает лист. Молча этого
-    // делать нельзя: собранное руками дороже случайного
-    if (layer.find('Image').length &&
-      !await confirmDialog('Собрать случайный образ? Всё, что на листе, будет убрано.', 'Собрать')) return;
-    const byCat = new Map();
-    for (const it of visibleItems()) {
-      if (!it.catId) continue;
-      if (!byCat.has(it.catId)) byCat.set(it.catId, []);
-      byCat.get(it.catId).push(it);
+  /**
+   * Подбор по цвету. Из всего, чем вещь описана, для образа важен только
+   * цвет: производитель и материал сочетаемости не определяют.
+   *
+   * Лист не стирается и ничего не выбирается за человека — отобранное
+   * уходит в обычный выбор вещей, где видно, что берёшь. Прежний случайный
+   * подбор делал обратное: стирал собранное и ставил три случайные вещи.
+   */
+  async function addByColor() {
+    // цвета, за которыми ничего не стоит, предлагать незачем: такой выбор
+    // ведёт в пустую сетку
+    const pool = visibleItems();
+    const colors = listItems('colors')
+      .map(c => ({ ...c, n: pool.filter(i => (i.colorIds || []).includes(c.id)).length }))
+      .filter(c => c.n);
+    if (!colors.length) {
+      return toast('Цвета у вещей ещё не отмечены — их ставят в карточке вещи', 3600);
     }
-    if (!byCat.size) return toast('Сначала добавьте вещи');
-    layer.find('Image').forEach(n => n.destroy());
-    tr.nodes([]);
-    const cats = [...byCat.keys()].sort(() => Math.random() - .5).slice(0, 3);
-    let i = 0;
-    for (const c of cats) {
-      const pool = byCat.get(c);
-      const it = pool[Math.floor(Math.random() * pool.length)];
-      await addItemNode(it.id, { y: SH * (0.22 + 0.27 * i), x: SW / 2 });
-      i++;
-    }
-    layer.batchDraw();
-    toast('Случайный образ');
+
+    const picked = new Set();
+    const count = () => pool.filter(i => (i.colorIds || []).some(id => picked.has(id))).length;
+    const goBtn = h('button', { class: 'btn primary', disabled: true }, 'Выбрать вещи');
+    const grid = h('div', { class: 'color-pick' });
+
+    const render = () => {
+      fill(grid, ...colors.map(c => h('button', {
+        class: 'color-opt' + (picked.has(c.id) ? ' sel' : ''),
+        onclick: () => { picked.has(c.id) ? picked.delete(c.id) : picked.add(c.id); render(); }
+      },
+        h('span', { class: 'dot', style: { background: c.hex } }),
+        h('b', {}, c.name),
+        h('span', { class: 'muted small' }, nItems(c.n))
+      )));
+      const n = count();
+      goBtn.disabled = !n;
+      goBtn.textContent = n ? `Выбрать вещи · ${n}` : 'Выбрать вещи';
+    };
+    render();
+
+    const m = openModal({
+      title: 'Подбор по цвету',
+      body: [
+        h('p', { class: 'hint-top' }, 'Отметьте цвета — покажем вещи, в которых они есть.'),
+        grid
+      ],
+      foot: [h('button', { class: 'btn', onclick: () => m.close() }, 'Отмена'), goBtn]
+    });
+
+    goBtn.onclick = async () => {
+      const list = pool.filter(i => (i.colorIds || []).some(id => picked.has(id)));
+      m.close();
+      const ids = await pickItems({ title: 'Вещи по цвету', pool: list });
+      if (!ids || !ids.length) return;
+      let i = 0;
+      for (const id of ids) {
+        const n = await addItemNode(id, {
+          x: SW / 2 + (i % 2 ? 70 : -70), y: SH * (0.25 + 0.22 * Math.floor(i / 2))
+        });
+        i++;
+        if (n) tr.nodes([n]);
+      }
+      layer.batchDraw();
+    };
   }
 
   function selected() { return tr.nodes()[0] || null; }
@@ -4142,10 +4202,7 @@ async function openOutfitEditor(existing, isCopy = false) {
   const TOOLS = [
     { ic: '➕', label: 'Вещи', fn: addItems },
     { ic: '🎨', label: 'Фон', fn: openBg },
-    // название на вырост: кнопка должна собирать вещи по фильтру (например,
-    // все синие и красные — проверить сочетаемость). Пока за ним случайный
-    // подбор, поэтому он и спрашивает, прежде чем стереть собранное
-    { ic: '🎯', label: 'По фильтру', fn: randomize },
+    { ic: '🌈', label: 'По цвету', fn: addByColor },
     // одна кнопка вместо двух стрелок: наверх поднимает касание, а вниз
     // пальцем не покажешь — для этого и кнопка
     {
@@ -4311,13 +4368,8 @@ function renderOutfitCard(root, o) {
     // как образ попадёт в календарь и добавит ей носку, которой не было
     gone.length ? h('p', { class: 'warn-line' }, goneText(gone)) : null,
 
-    h('div', { class: 'section-title' }, 'Вещи в образе'),
-    items.length ? h('div', { class: 'grid' }, items.map(it => h('div', {
-      class: 'tile' + (it.archived ? ' gone' : ''), style: { background: bgCss(it.bg) },
-      onclick: () => { closeOutfitCard(); openItemCard(it); }
-    }, h('img', { src: urlFor(it.img) }))))
-      : h('p', { class: 'muted small' }, 'Вещей из гардероба в образе не осталось.'),
-
+    // Действия стоят выше списка вещей: за ними приходят, а список —
+    // справка. На телефоне до кнопок иначе нужно было прокручивать экран
     h('div', { class: 'card-actions' },
       h('button', {
         class: 'btn', onclick: async () => {
@@ -4331,7 +4383,15 @@ function renderOutfitCard(root, o) {
       h('button', { class: 'btn', onclick: () => copyOutfit(o) }, '⧉ Копия'),
       h('button', { class: 'btn', onclick: () => openOutfitEditor(o) }, '✎ Изменить'),
       h('button', { class: 'btn danger', onclick: () => removeOutfit(o) }, '🗑')
-    )
+    ),
+
+    h('div', { class: 'section-title' }, 'Вещи в образе'),
+    items.length ? h('div', { class: 'grid' }, items.map(it => h('div', {
+      class: 'tile' + (it.archived ? ' gone' : ''), style: { background: bgCss(it.bg) },
+      onclick: () => { closeOutfitCard(); openItemCard(it); }
+    }, h('img', { src: urlFor(it.img) }))))
+      : h('p', { class: 'muted small' }, 'Вещей из гардероба в образе не осталось.'),
+
   );
   root.style.paddingBottom = '';
 }

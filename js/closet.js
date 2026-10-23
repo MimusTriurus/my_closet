@@ -457,6 +457,22 @@ const composition = parts => (parts || [])
   .map(p => entryName('materials', p.id) + (p.pct ? ` ${p.pct}%` : ''))
   .filter(Boolean).join(' · ');
 
+/**
+ * Цена за носку. Считается в валюте самой вещи: пересчёт потребовал бы
+ * курса, а он у нас был бы неправдой — покупка была по курсу своего дня,
+ * а даты покупки мы не храним. Поэтому ни сумм по гардеробу, ни рейтингов
+ * «дороже всех в носке» — сравнивает глазами человек, он про валюты знает.
+ *
+ * Число округляем крупно: 2000 ₽ за носку — наблюдение, а не бухгалтерия.
+ * Мелкие значения оставляем с копейками, иначе 0,45 € превратится в ноль.
+ */
+const perWear = (price, worn) => {
+  const v = price.value / worn;
+  const n = v >= 10 ? Math.round(v) : Math.round(v * 100) / 100;
+  // запятая, а не точка: текст вокруг русский
+  return `${String(n).replace('.', ',')} ${price.cur}`;
+};
+
 /** Строка подробностей: пустую не прячем — она напоминает, что не заполнена. */
 const detail = (label, value, empty = 'не указано') => h('div', { class: 'detail' },
   h('span', { class: 'k' }, label),
@@ -510,6 +526,9 @@ function renderItemCard(root, item) {
       composition(item.material?.lining)
         ? detail('Подкладка', composition(item.material.lining)) : null,
       detail('Цена', item.price ? `${item.price.value} ${item.price.cur}` : '', 'не указана'),
+      // без цены или без носок считать нечего — строку не показываем вовсе:
+      // прочерк или бесконечность сказали бы меньше, чем её отсутствие
+      item.price && worn ? detail('Цена за носку', perWear(item.price, worn)) : null,
       item.note ? detail('Комментарий', item.note) : null
     ) : null,
 

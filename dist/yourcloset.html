@@ -3401,9 +3401,22 @@ async function openOutfitEditor(existing, isCopy = false) {
     layer.batchDraw();
   }
 
+  /**
+   * Касание вещи поднимает её наверх — как со свитером поверх футболки:
+   * что тронул последним, то и сверху. Стрелки «выше/ниже» этого не давали:
+   * порядок приходилось набирать по шагу, да ещё и несимметрично — рамка
+   * выделения живёт в том же списке слоёв и сбивала счёт.
+   *
+   * Цена: подвинув вещь, лежащую сзади, её поднимешь, даже если не хотел.
+   * Исправляется касанием соседней вещи и совпадает с тем, как одеваются.
+   */
   stage.on('pointerdown', e => {
     if (e.target === stage || e.target === bgRect) tr.nodes([]);
-    else if (e.target.getClassName() === 'Image') tr.nodes([e.target]);
+    else if (e.target.getClassName() === 'Image') {
+      tr.nodes([e.target]);
+      e.target.moveToTop();
+      tr.moveToTop();
+    }
     layer.batchDraw();
   });
 
@@ -3445,6 +3458,10 @@ async function openOutfitEditor(existing, isCopy = false) {
   }
 
   async function randomize() {
+    // пока за кнопкой случайный подбор, и он стирает лист. Молча этого
+    // делать нельзя: собранное руками дороже случайного
+    if (layer.find('Image').length &&
+      !await confirmDialog('Собрать случайный образ? Всё, что на листе, будет убрано.', 'Собрать')) return;
     const byCat = new Map();
     for (const it of visibleItems()) {
       if (!it.catId) continue;
@@ -3470,25 +3487,44 @@ async function openOutfitEditor(existing, isCopy = false) {
 
   const TOOLS = [
     { ic: '➕', label: 'Вещи', fn: addItems },
-    { ic: '🎨', label: 'Фон', fn: () => showBgPicker() },
-    { ic: '🎲', label: 'Случайно', fn: randomize },
-    { ic: '⬆️', label: 'Выше', fn: () => { selected()?.moveUp(); tr.moveToTop(); layer.batchDraw(); } },
-    { ic: '⬇️', label: 'Ниже', fn: () => { const n = selected(); if (n) { n.moveDown(); if (n.zIndex() < 1) n.zIndex(1); } layer.batchDraw(); } },
+    // название на вырост: кнопка должна собирать вещи по фильтру (например,
+    // все синие и красные — проверить сочетаемость). Пока за ним случайный
+    // подбор, поэтому он и спрашивает, прежде чем стереть собранное
+    { ic: '🎯', label: 'По фильтру', fn: randomize },
+    // одна кнопка вместо двух стрелок: наверх поднимает касание, а вниз
+    // пальцем не покажешь — для этого и кнопка
+    {
+      ic: '⤓', label: 'Под низ', fn: () => {
+        const n = selected();
+        if (!n) return toast('Сначала выберите вещь');
+        n.zIndex(1);          // 1, а не 0: под нулём лежит фон листа
+        tr.moveToTop();
+        layer.batchDraw();
+      }
+    },
     { ic: '🗑', label: 'Убрать', fn: () => { const n = selected(); if (n) { n.destroy(); tr.nodes([]); layer.batchDraw(); } } }
   ];
   fill(toolbar, ...TOOLS.map(t =>
     h('button', { class: 'tool', onclick: t.fn }, h('span', { class: 'ic' }, t.ic), h('span', {}, t.label))));
 
-  function showBgPicker() {
-    fill(opts, h('div', { class: 'palette-row' }, BGS.map(b =>
+  // Палитра стоит на месте всегда. Раньше её показывала кнопка «Фон», но
+  // показанная однажды, она оставалась насовсем и вытесняла подсказку —
+  // кнопка после этого выглядела ничего не делающей. Места хватает обеим
+  fill(opts,
+    h('div', { class: 'row', style: { gap: '8px', marginBottom: '2px' } },
+      h('span', { class: 'section-title spacer', style: { margin: '0' } }, 'Фон листа'),
+      h('span', { class: 'muted small' }, 'касание поднимает вещь наверх')),
+    h('div', { class: 'palette-row' }, BGS.map(b =>
       h('button', {
         class: 'swatch' + (outfit.bg === b.id ? ' sel' : ''),
         style: { background: b.css },
-        onclick: e => { applyBg(b.id); [...e.currentTarget.parentNode.children].forEach(x => x.classList.remove('sel')); e.currentTarget.classList.add('sel'); }
+        onclick: e => {
+          applyBg(b.id);
+          [...e.currentTarget.parentNode.children].forEach(x => x.classList.remove('sel'));
+          e.currentTarget.classList.add('sel');
+        }
       })
     )));
-  }
-  fill(opts, h('div', { class: 'muted small' }, 'Тапните вещь, чтобы двигать, вращать и менять размер.'));
 
   let saved = null;
 

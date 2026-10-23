@@ -32,6 +32,9 @@ export async function openOutfitEditor(existing, isCopy = false) {
   const host = h('div', { id: 'stage-host' });
   const toolbar = h('div', { class: 'tools' });
   const opts = h('div', { class: 'tool-opts' });
+  // подсказка стоит под инструментами, в свободном поле: это единственное
+  // место, где длинная строка никого не теснит, и она меняется по делу
+  const hint = h('p', { class: 'ed-hint' });
 
   // редактор отдаёт сохранённый образ наружу: календарю нужно положить
   // на день именно копию, которую пользователь только что собрал
@@ -41,7 +44,8 @@ export async function openOutfitEditor(existing, isCopy = false) {
   const modal = openModal({
     title: !existing || isCopy ? 'Новый образ' : 'Редактировать образ',
     full: true,
-    body: h('div', { style: { display: 'flex', flexDirection: 'column', height: '100%', margin: '-12px' } }, host, opts, toolbar),
+    body: h('div', { style: { display: 'flex', flexDirection: 'column', height: '100%', margin: '-12px' } },
+      host, opts, toolbar, hint),
     onClose: () => settle(saved),
     foot: [
       h('button', { class: 'btn', onclick: () => modal.close() }, 'Отмена'),
@@ -73,9 +77,16 @@ export async function openOutfitEditor(existing, isCopy = false) {
    */
   const PAD = 10;
   function fit() {
+    // сначала даём области растянуться, чтобы узнать, сколько места есть,
+    // а потом ужимаем её по листу — иначе пустота оставалась бы между
+    // листом и инструментами, то есть ровно там, где мешает
+    host.style.flex = '1';
+    host.style.height = '';
     const r = host.getBoundingClientRect();
     const s = Math.min((r.width - PAD * 2) / SW, (r.height - PAD * 2) / SH);
     stage.width(SW * s); stage.height(SH * s); stage.scale({ x: s, y: s });
+    host.style.flex = 'none';
+    host.style.height = SH * s + PAD * 2 + 'px';
     stage.batchDraw();
     return s;
   }
@@ -107,6 +118,15 @@ export async function openOutfitEditor(existing, isCopy = false) {
    * Цена: подвинув вещь, лежащую сзади, её поднимешь, даже если не хотел.
    * Исправляется касанием соседней вещи и совпадает с тем, как одеваются.
    */
+  function setHint() {
+    const n = layer.find('Image').length;
+    hint.textContent = !n
+      ? 'Нажмите «Вещи», чтобы положить вещь на лист'
+      : tr.nodes().length
+        ? 'Тащите, чтобы двигать. Уголки — размер и поворот'
+        : 'Коснитесь вещи: она поднимется наверх, и её можно двигать';
+  }
+
   stage.on('pointerdown', e => {
     if (e.target === stage || e.target === bgRect) tr.nodes([]);
     else if (e.target.getClassName() === 'Image') {
@@ -114,6 +134,7 @@ export async function openOutfitEditor(existing, isCopy = false) {
       e.target.moveToTop();
       tr.moveToTop();
     }
+    setHint();
     layer.batchDraw();
   });
 
@@ -151,6 +172,7 @@ export async function openOutfitEditor(existing, isCopy = false) {
       i++;
       if (n) tr.nodes([n]);
     }
+    setHint();
     layer.batchDraw();
   }
 
@@ -176,6 +198,7 @@ export async function openOutfitEditor(existing, isCopy = false) {
       await addItemNode(it.id, { y: SH * (0.22 + 0.27 * i), x: SW / 2 });
       i++;
     }
+    setHint();
     layer.batchDraw();
     toast('Случайный образ');
   }
@@ -199,7 +222,7 @@ export async function openOutfitEditor(existing, isCopy = false) {
         layer.batchDraw();
       }
     },
-    { ic: '🗑', label: 'Убрать', fn: () => { const n = selected(); if (n) { n.destroy(); tr.nodes([]); layer.batchDraw(); } } }
+    { ic: '🗑', label: 'Убрать', fn: () => { const n = selected(); if (n) { n.destroy(); tr.nodes([]); setHint(); layer.batchDraw(); } } }
   ];
   fill(toolbar, ...TOOLS.map(t =>
     h('button', { class: 'tool', onclick: t.fn }, h('span', { class: 'ic' }, t.ic), h('span', {}, t.label))));
@@ -208,9 +231,7 @@ export async function openOutfitEditor(existing, isCopy = false) {
   // показанная однажды, она оставалась насовсем и вытесняла подсказку —
   // кнопка после этого выглядела ничего не делающей. Места хватает обеим
   fill(opts,
-    h('div', { class: 'row', style: { gap: '8px', marginBottom: '2px' } },
-      h('span', { class: 'section-title spacer', style: { margin: '0' } }, 'Фон листа'),
-      h('span', { class: 'muted small' }, 'касание поднимает вещь наверх')),
+    h('div', { class: 'section-title', style: { margin: '0 0 2px' } }, 'Фон листа'),
     h('div', { class: 'palette-row' }, BGS.map(b =>
       h('button', {
         class: 'swatch' + (outfit.bg === b.id ? ' sel' : ''),
@@ -222,6 +243,8 @@ export async function openOutfitEditor(existing, isCopy = false) {
         }
       })
     )));
+
+  setHint();
 
   let saved = null;
 

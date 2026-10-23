@@ -4,16 +4,15 @@ import { loadAll, subscribe, notices } from './state.js';
 import { renderCloset, closetNav, startAddItem, goRoot } from './closet.js';
 import { renderOutfits, outfitsNav, goOutfitsRoot } from './outfits.js';
 import { renderCalendar, goCalendarHome } from './calendar.js';
-import { renderPacking } from './packing.js';
+import { renderPacking, packingNav, goPackingRoot } from './packing.js';
 import { openSettings } from './settings.js';
 
-// `home` — куда ведёт повторное нажатие на уже открытую вкладку. У «Чемодана»
-// его нет: там один экран, возвращаться неоткуда
+// `home` — куда ведёт повторное нажатие на уже открытую вкладку
 const TABS = {
   closet: { title: 'Гардероб', render: renderCloset, nav: closetNav, home: goRoot },
   outfits: { title: 'Образы', render: renderOutfits, nav: outfitsNav, home: goOutfitsRoot },
   calendar: { title: 'Календарь', render: renderCalendar, home: goCalendarHome },
-  packing: { title: 'Чемодан', render: renderPacking }
+  packing: { title: 'Чемодан', render: renderPacking, nav: packingNav, home: goPackingRoot }
 };
 
 let current = 'closet';

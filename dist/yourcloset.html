@@ -4783,12 +4783,25 @@ function renderCalendar(root) {
 // Вкладка «Чемодан»: список вещей на поездку с отметками «уложено».
 // Поездка хранит только идентификаторы вещей — образы здесь не живут,
 // кнопка «из Образа» просто разворачивает образ в его вещи.
+//
+// Вкладка ходит по уровням, как «Гардероб»: список поездок → архив или
+// поездка. Раньше и архив, и поездка открывались модальными окнами, и
+// закрывались «✕» — знаком отмены, хотя отменять нечего: всё здесь
+// сохраняется сразу. «✕» оставлен тому, где есть что отменять.
 
 
 
 
 
 
+
+// где мы внутри вкладки. Поездка открывается и из списка, и из архива —
+// `archive` помнит, откуда пришли, и туда же возвращает «‹»
+const pnav = { archive: false, tripId: null };
+
+const goPackingRoot = () => { pnav.archive = false; pnav.tripId = null; emit(); };
+const openTrip = t => { pnav.tripId = t.id; emit(); };
+const closeTrip = () => { pnav.tripId = null; emit(); };
 
 const progress = t => ({
   total: t.itemIds?.length || 0,
@@ -4810,7 +4823,10 @@ async function addItems(trip, ids) {
   return fresh.length;
 }
 
-/** Выбор поездки, из которой копируются вещи (галочки не переносим). */
+/**
+ * Выбор поездки, из которой копируются вещи (галочки не переносим).
+ * Это по-прежнему окно: выбор — короткий разговор, а не место.
+ */
 function pickTrip(exceptId) {
   return new Promise(res => {
     const list = byNewest(state.trips.filter(t => t.id !== exceptId));
@@ -4828,97 +4844,76 @@ function pickTrip(exceptId) {
   });
 }
 
-function openTrip(trip) {
-  const body = h('div', {});
-  const modal = openModal({
-    title: trip.name, body, full: true, onClose: emit,
-    // действия над поездкой живут в шапке — иначе до них пришлось бы
-    // прокручивать весь список вещей
-    headAction: h('button', {
-      class: 'icon-btn', title: 'Действия с поездкой',
-      onclick: async () => {
-        const act = await actionSheet(trip.name, [
-          { id: 'arch', icon: trip.done ? '↩' : '📦', label: trip.done ? 'Вернуть из архива' : 'Переместить в архив' },
-          { id: 'ren', icon: '✎', label: 'Переименовать' },
-          { id: 'del', icon: '🗑', label: 'Удалить поездку', danger: true }
-        ]);
-        if (act === 'arch') {
-          trip.done = !trip.done;
-          await saveTrip(trip);
-          toast(trip.done ? 'Перемещена в архив' : 'Возвращена в активные');
-          render();
-        } else if (act === 'ren') {
-          const n = await promptDialog('Переименовать поездку', trip.name, 'Название');
-          if (!n) return;
-          trip.name = n;
-          await saveTrip(trip);
-          modal.root.querySelector('.modal-head h2').textContent = n;
-        } else if (act === 'del') {
-          if (await confirmDialog(`Удалить поездку «${trip.name}»? Вещи останутся в гардеробе.`)) {
-            await deleteTrip(trip.id);
-            modal.close();
-          }
-        }
-      }
-    }, '⋯')
-  });
-
-  function render() {
-    const items = (trip.itemIds || []).map(itemById).filter(Boolean);
-    const { total, done } = progress(trip);
-    const gone = items.filter(i => i.archived).length;
-
-    fill(body,
-      // закреплено под шапкой: добавление доступно на любой длине списка
-      h('div', { class: 'sticky-add' },
-        h('div', { class: 'meta' },
-          h('span', { class: 'section-title' }, 'Добавить вещи'),
-          h('span', { class: 'trip-progress' },
-            total ? `Уложено ${done} из ${total}` : 'Список пуст',
-            gone ? ` · ${gone} из архива` : '',
-            trip.done ? ' · в архиве' : '')
-        ),
-        h('div', { class: 'row', style: { gap: '8px' } },
-          h('button', {
-            class: 'btn btn-sm btn-add', style: { flex: '1' }, onclick: async () => {
-              const ids = await pickItems({ title: 'Вещи в поездку', selected: trip.itemIds || [] });
-              if (!ids) return;
-              trip.itemIds = ids.filter(id => itemById(id));
-              await saveTrip(trip);
-              render();
-            }
-          }, '🧺 Гардероб'),
-          h('button', {
-            class: 'btn btn-sm btn-add', style: { flex: '1' }, onclick: async () => {
-              const ids = await pickOutfits({ title: 'Развернуть образ в вещи' });
-              if (!ids || !ids.length) return;
-              // архивное берём: список для сборов — напоминание, а не опись
-              // гардероба. Лишнее пользователь уберёт сам, а вот про шарф,
-              // которого уже нет, лучше вспомнить до отъезда
-              const fromOutfits = ids
-                .flatMap(id => (outfitById(id)?.layers || []).map(l => l.itemId))
-                .filter(id => itemById(id));
-              await addItems(trip, [...new Set(fromOutfits)]);
-              render();
-            }
-          }, '👗 Образ'),
-          h('button', {
-            class: 'btn btn-sm btn-add', style: { flex: '1' }, onclick: async () => {
-              const src = await pickTrip(trip.id);
-              if (!src) return;
-              await addItems(trip, src.itemIds || []);
-              render();
-            }
-          }, '🧳 Поездка')
-        )
-      ),
-
-      h('div', { class: 'list' }, items.map(row)),
-      items.length ? null : h('div', { class: 'empty' }, 'Добавьте вещи кнопками выше')
-    );
+/** Действия над поездкой. Живут в шапке вкладки — иначе до них пришлось
+ *  бы прокручивать весь список вещей. */
+async function tripActions(trip) {
+  const act = await actionSheet(trip.name, [
+    { id: 'arch', icon: trip.done ? '↩' : '📦', label: trip.done ? 'Вернуть из архива' : 'Переместить в архив' },
+    { id: 'ren', icon: '✎', label: 'Переименовать' },
+    { id: 'del', icon: '🗑', label: 'Удалить поездку', danger: true }
+  ]);
+  if (act === 'arch') {
+    trip.done = !trip.done;
+    await saveTrip(trip);
+    toast(trip.done ? 'Перемещена в архив' : 'Возвращена в активные');
+  } else if (act === 'ren') {
+    const n = await promptDialog('Переименовать поездку', trip.name, 'Название');
+    if (!n) return;
+    trip.name = n;
+    await saveTrip(trip);          // saveTrip перерисует и шапку: заголовок её
+  } else if (act === 'del') {
+    if (await confirmDialog(`Удалить поездку «${trip.name}»? Вещи останутся в гардеробе.`)) {
+      await deleteTrip(trip.id);
+      closeTrip();
+    }
   }
+}
 
-  function row(it) {
+/** Что показать в верхней панели: заголовок уровня и кнопку «назад». */
+function packingNav() {
+  const trip = pnav.tripId ? tripById(pnav.tripId) : null;
+  if (trip) {
+    return {
+      title: trip.name, back: closeTrip,
+      action: { icon: '⋯', title: 'Действия с поездкой', onclick: () => tripActions(trip) }
+    };
+  }
+  if (pnav.archive) return { title: 'Архив поездок', back: goPackingRoot };
+  return null;
+}
+
+/**
+ * Поездки — сверху новые. Дат у поездки нет, поэтому «новая» означает
+ * «заведена позже». Сортируем при показе, а не полагаемся на то, в каком
+ * порядке они оказались в памяти.
+ */
+const byNewest = list => [...list].sort((a, b) => b.createdAt - a.createdAt);
+
+async function newTrip() {
+  const name = await promptDialog('Новая поездка', '', 'Название, например «Лиссабон, май»');
+  if (!name) return;
+  const trip = { id: uid('tr'), name, itemIds: [], checked: {}, done: false, createdAt: Date.now() };
+  await saveTrip(trip);
+  openTrip(trip);
+}
+
+function tripRow(t) {
+  const { total, done } = progress(t);
+  return h('div', { class: 'lrow nav', onclick: () => openTrip(t) },
+    h('div', { style: { fontSize: '26px', opacity: t.done ? .5 : 1 } }, '🧳'),
+    h('div', { class: 't' },
+      h('b', {}, t.name),
+      h('span', {}, t.done ? `в архиве · ${total} вещей` : `уложено ${done} из ${total}`)),
+    h('span', { class: 'chev' }, '›')
+  );
+}
+
+function renderTrip(root, trip) {
+  const items = (trip.itemIds || []).map(itemById).filter(Boolean);
+  const { total, done } = progress(trip);
+  const gone = items.filter(i => i.archived).length;
+
+  const row = it => {
     const checked = !!trip.checked?.[it.id];
     // архивная вещь в списке — не ошибка, а подсказка: такую вещь надо
     // либо заменить, либо вычеркнуть. Поэтому помечаем, а не прячем
@@ -4930,7 +4925,6 @@ function openTrip(trip) {
           trip.checked = trip.checked || {};
           trip.checked[it.id] = e.target.checked;
           await saveTrip(trip);
-          render();
         }
       }),
       h('img', { class: 'thumb', src: urlFor(it.img), style: { background: bgCss(it.bg) } }),
@@ -4943,53 +4937,68 @@ function openTrip(trip) {
           trip.itemIds = trip.itemIds.filter(x => x !== it.id);
           if (trip.checked) delete trip.checked[it.id];
           await saveTrip(trip);
-          render();
         }
       }, '✕')
     );
-  }
-
-  render();
-}
-
-async function newTrip() {
-  const name = await promptDialog('Новая поездка', '', 'Название, например «Лиссабон, май»');
-  if (!name) return;
-  const trip = { id: uid('tr'), name, itemIds: [], checked: {}, done: false, createdAt: Date.now() };
-  await saveTrip(trip);
-  openTrip(trip);
-}
-
-function tripRow(t) {
-  const { total, done } = progress(t);
-  return h('div', { class: 'lrow', onclick: () => openTrip(t) },
-    h('div', { style: { fontSize: '26px', opacity: t.done ? .5 : 1 } }, '🧳'),
-    h('div', { class: 't' },
-      h('b', {}, t.name),
-      h('span', {}, t.done ? `в архиве · ${total} вещей` : `уложено ${done} из ${total}`))
-  );
-}
-
-function openArchive() {
-  const body = h('div', {});
-  const modal = openModal({ title: 'Архив поездок', body, full: true, onClose: emit });
-  const render = () => {
-    const archived = byNewest(state.trips.filter(t => t.done));
-    fill(body, archived.length
-      ? h('div', { class: 'list' }, archived.map(tripRow))
-      : h('div', { class: 'empty' }, 'Архив пуст'));
   };
-  render();
+
+  fill(root,
+    // закреплено под шапкой: добавление доступно на любой длине списка
+    h('div', { class: 'sticky-add' },
+      h('div', { class: 'meta' },
+        h('span', { class: 'section-title' }, 'Добавить вещи'),
+        h('span', { class: 'trip-progress' },
+          total ? `Уложено ${done} из ${total}` : 'Список пуст',
+          gone ? ` · ${gone} из архива` : '',
+          trip.done ? ' · в архиве' : '')
+      ),
+      h('div', { class: 'row', style: { gap: '8px' } },
+        h('button', {
+          class: 'btn btn-sm btn-add', style: { flex: '1' }, onclick: async () => {
+            const ids = await pickItems({ title: 'Вещи в поездку', selected: trip.itemIds || [] });
+            if (!ids) return;
+            trip.itemIds = ids.filter(id => itemById(id));
+            await saveTrip(trip);
+          }
+        }, '🧺 Гардероб'),
+        h('button', {
+          class: 'btn btn-sm btn-add', style: { flex: '1' }, onclick: async () => {
+            const ids = await pickOutfits({ title: 'Развернуть образ в вещи' });
+            if (!ids || !ids.length) return;
+            // архивное берём: список для сборов — напоминание, а не опись
+            // гардероба. Лишнее пользователь уберёт сам, а вот про шарф,
+            // которого уже нет, лучше вспомнить до отъезда
+            const fromOutfits = ids
+              .flatMap(id => (outfitById(id)?.layers || []).map(l => l.itemId))
+              .filter(id => itemById(id));
+            await addItems(trip, [...new Set(fromOutfits)]);
+          }
+        }, '👗 Образ'),
+        h('button', {
+          class: 'btn btn-sm btn-add', style: { flex: '1' }, onclick: async () => {
+            const src = await pickTrip(trip.id);
+            if (!src) return;
+            await addItems(trip, src.itemIds || []);
+          }
+        }, '🧳 Поездка')
+      )
+    ),
+
+    h('div', { class: 'list' }, items.map(row)),
+    items.length ? null : h('div', { class: 'empty' }, 'Добавьте вещи кнопками выше')
+  );
+  root.style.paddingBottom = '';
 }
 
-/**
- * Поездки — сверху новые. Дат у поездки нет, поэтому «новая» означает
- * «заведена позже». Сортируем при показе, а не полагаемся на то, в каком
- * порядке они оказались в памяти.
- */
-const byNewest = list => [...list].sort((a, b) => b.createdAt - a.createdAt);
+function renderArchive(root) {
+  const archived = byNewest(state.trips.filter(t => t.done));
+  fill(root, archived.length
+    ? h('div', { class: 'list' }, archived.map(tripRow))
+    : h('div', { class: 'empty' }, 'Архив пуст'));
+  root.style.paddingBottom = '';
+}
 
-function renderPacking(root) {
+function renderTripList(root) {
   const active = byNewest(state.trips.filter(t => !t.done));
   const archived = byNewest(state.trips.filter(t => t.done));
 
@@ -5007,7 +5016,7 @@ function renderPacking(root) {
     // Полка, появляющаяся задним числом, читается как пропажа, и о самой
     // возможности убрать поездку, не удаляя её, узнать было бы неоткуда.
     // То же правило, что у архива вещей в «Гардеробе»
-    h('div', { class: 'archive-bar', onclick: openArchive },
+    h('div', { class: 'archive-bar', onclick: () => { pnav.archive = true; emit(); } },
       h('span', {}, '📦'),
       h('b', { class: 'spacer' }, 'Архив поездок'),
       archived.length ? h('span', { class: 'muted' }, archived.length) : null,
@@ -5018,6 +5027,15 @@ function renderPacking(root) {
   );
 
   root.style.paddingBottom = '140px';
+}
+
+function renderPacking(root) {
+  // поездку могли удалить — тогда уровень исчезает вместе с ней
+  const trip = pnav.tripId ? tripById(pnav.tripId) : null;
+  if (pnav.tripId && !trip) pnav.tripId = null;
+  if (trip) return renderTrip(root, trip);
+  if (pnav.archive) return renderArchive(root);
+  renderTripList(root);
 }
 
 /* ===== settings.js ===== */
@@ -5124,13 +5142,12 @@ function openSettings() {
 
 
 
-// `home` — куда ведёт повторное нажатие на уже открытую вкладку. У «Чемодана»
-// его нет: там один экран, возвращаться неоткуда
+// `home` — куда ведёт повторное нажатие на уже открытую вкладку
 const TABS = {
   closet: { title: 'Гардероб', render: renderCloset, nav: closetNav, home: goRoot },
   outfits: { title: 'Образы', render: renderOutfits, nav: outfitsNav, home: goOutfitsRoot },
   calendar: { title: 'Календарь', render: renderCalendar, home: goCalendarHome },
-  packing: { title: 'Чемодан', render: renderPacking }
+  packing: { title: 'Чемодан', render: renderPacking, nav: packingNav, home: goPackingRoot }
 };
 
 let current = 'closet';

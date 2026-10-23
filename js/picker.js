@@ -157,9 +157,7 @@ export function pickItems({ title = 'Выбрать вещи', selected = [], mu
 export function pickOutfits({ title = 'Выбрать образы', selected = [], multi = true } = {}) {
   return new Promise(res => {
     const sel = new Set(selected);
-    // с готовым набором сразу показываем сетку: папок всегда больше, чем
-    // отобранного, и ходить по пустым незачем. Вернуться к ним можно «‹»
-    let catId = pool ? ALL : null, subId = null;
+    let catId = null, subId = null;
     let done = false;
 
     const body = h('div', {});

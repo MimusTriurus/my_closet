@@ -596,7 +596,7 @@ export const NONE = '__none';
 const SERVICE_BAR_H = 42;
 export const nav = { all: false, archive: false, catId: null, subId: null, itemId: null };
 
-const goRoot = () => { nav.all = false; nav.archive = false; nav.catId = null; nav.subId = null; nav.itemId = null; emit(); };
+export const goRoot = () => { nav.all = false; nav.archive = false; nav.catId = null; nav.subId = null; nav.itemId = null; emit(); };
 const goArchive = () => { nav.all = false; nav.archive = true; nav.catId = null; nav.subId = null; nav.itemId = null; emit(); };
 const openCat = id => { nav.catId = id; nav.subId = null; emit(); };
 const openSub = id => { nav.subId = id; emit(); };
@@ -1050,6 +1050,11 @@ function renderAll(root) {
     );
   };
 
+  // Сброс показываем только когда есть что сбрасывать. Это действие над
+  // состоянием, а не раздел: без фильтров кнопка ничего не значит и
+  // предлагает работу, которой нет
+  const anyFilter = f.color || f.brand || f.material || f.favOnly;
+
   const filterRow = h('div', { class: 'chips filters' },
     filterChip('Цвет', 'color', 'colors', 'Без цвета'),
     filterChip('Производитель', 'brand', 'brands', 'Без производителя'),
@@ -1057,7 +1062,14 @@ function renderAll(root) {
     h('button', {
       class: 'chip' + (f.favOnly ? ' active' : ''),
       onclick: () => set('favOnly', !f.favOnly)
-    }, '★ Избранное')
+    }, '★ Избранное'),
+    anyFilter ? h('button', {
+      class: 'chip reset', onclick: () => {
+        // порядок сортировки не трогаем: это не фильтр, он ничего не прячет
+        f.color = null; f.brand = null; f.material = null; f.favOnly = false;
+        emit();
+      }
+    }, '✕ Сбросить фильтры') : null
   );
 
   const controls = h('div', { class: 'row', style: { margin: '6px 0 4px' } },

@@ -391,6 +391,10 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent-soft);bor
 }
 /* выбор цветов для подбора: строка на цвет — нужно и название, и сколько
    за ним вещей, одним кружком этого не сказать */
+/* сброс — не фильтр, а действие: тусклее остальных чипов, чтобы не читаться
+   как ещё одно условие отбора */
+.chip.reset{color:var(--muted);border-style:dashed}
+
 .color-pick{display:flex;flex-direction:column;gap:8px}
 .color-opt{
   display:flex;align-items:center;gap:10px;width:100%;text-align:left;
@@ -3799,6 +3803,11 @@ function renderAll(root) {
     );
   };
 
+  // Сброс показываем только когда есть что сбрасывать. Это действие над
+  // состоянием, а не раздел: без фильтров кнопка ничего не значит и
+  // предлагает работу, которой нет
+  const anyFilter = f.color || f.brand || f.material || f.favOnly;
+
   const filterRow = h('div', { class: 'chips filters' },
     filterChip('Цвет', 'color', 'colors', 'Без цвета'),
     filterChip('Производитель', 'brand', 'brands', 'Без производителя'),
@@ -3806,7 +3815,14 @@ function renderAll(root) {
     h('button', {
       class: 'chip' + (f.favOnly ? ' active' : ''),
       onclick: () => set('favOnly', !f.favOnly)
-    }, '★ Избранное')
+    }, '★ Избранное'),
+    anyFilter ? h('button', {
+      class: 'chip reset', onclick: () => {
+        // порядок сортировки не трогаем: это не фильтр, он ничего не прячет
+        f.color = null; f.brand = null; f.material = null; f.favOnly = false;
+        emit();
+      }
+    }, '✕ Сбросить фильтры') : null
   );
 
   const controls = h('div', { class: 'row', style: { margin: '6px 0 4px' } },
@@ -4613,6 +4629,8 @@ function renderOutfits(root) {
 
 
 let cursor = new Date();
+/** Повторное нажатие на вкладку возвращает календарь к сегодняшнему месяцу. */
+const goCalendarHome = () => { cursor = new Date(); emit(); };
 const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль',
   'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
@@ -5106,10 +5124,12 @@ function openSettings() {
 
 
 
+// `home` — куда ведёт повторное нажатие на уже открытую вкладку. У «Чемодана»
+// его нет: там один экран, возвращаться неоткуда
 const TABS = {
-  closet: { title: 'Гардероб', render: renderCloset, nav: closetNav },
-  outfits: { title: 'Образы', render: renderOutfits, nav: outfitsNav },
-  calendar: { title: 'Календарь', render: renderCalendar },
+  closet: { title: 'Гардероб', render: renderCloset, nav: closetNav, home: goRoot },
+  outfits: { title: 'Образы', render: renderOutfits, nav: outfitsNav, home: goOutfitsRoot },
+  calendar: { title: 'Календарь', render: renderCalendar, home: goCalendarHome },
   packing: { title: 'Чемодан', render: renderPacking }
 };
 
@@ -5156,7 +5176,15 @@ function setTab(tab) {
 async function boot() {
   await loadAll();
   subscribe(() => render());
-  qsa('#tabbar button').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
+  // Нажатие на уже открытую вкладку возвращает к её началу — так из
+  // подкатегории попадают в корень одним движением, а не тремя «‹».
+  // Отметки в режиме выбора при этом не трогаем: их гасит только «Отмена»
+  qsa('#tabbar button').forEach(b => b.addEventListener('click', () => {
+    const tab = b.dataset.tab;
+    if (tab !== current) return setTab(tab);
+    TABS[tab].home?.();
+    qs('main#views').scrollTop = 0;
+  }));
   render();
   // загрузка могла что-то поправить сама — не молчим об этом
   notices.forEach((msg, i) => setTimeout(() => toast(msg, 4200), 600 + i * 800));

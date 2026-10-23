@@ -1,16 +1,18 @@
 // Точка входа: загрузка состояния, переключение вкладок, перерисовка.
 import { fill, qs, qsa, h, toast } from './ui.js';
 import { loadAll, subscribe, notices } from './state.js';
-import { renderCloset, closetNav, startAddItem } from './closet.js';
-import { renderOutfits, outfitsNav } from './outfits.js';
-import { renderCalendar } from './calendar.js';
+import { renderCloset, closetNav, startAddItem, goRoot } from './closet.js';
+import { renderOutfits, outfitsNav, goOutfitsRoot } from './outfits.js';
+import { renderCalendar, goCalendarHome } from './calendar.js';
 import { renderPacking } from './packing.js';
 import { openSettings } from './settings.js';
 
+// `home` — куда ведёт повторное нажатие на уже открытую вкладку. У «Чемодана»
+// его нет: там один экран, возвращаться неоткуда
 const TABS = {
-  closet: { title: 'Гардероб', render: renderCloset, nav: closetNav },
-  outfits: { title: 'Образы', render: renderOutfits, nav: outfitsNav },
-  calendar: { title: 'Календарь', render: renderCalendar },
+  closet: { title: 'Гардероб', render: renderCloset, nav: closetNav, home: goRoot },
+  outfits: { title: 'Образы', render: renderOutfits, nav: outfitsNav, home: goOutfitsRoot },
+  calendar: { title: 'Календарь', render: renderCalendar, home: goCalendarHome },
   packing: { title: 'Чемодан', render: renderPacking }
 };
 
@@ -57,7 +59,15 @@ function setTab(tab) {
 async function boot() {
   await loadAll();
   subscribe(() => render());
-  qsa('#tabbar button').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
+  // Нажатие на уже открытую вкладку возвращает к её началу — так из
+  // подкатегории попадают в корень одним движением, а не тремя «‹».
+  // Отметки в режиме выбора при этом не трогаем: их гасит только «Отмена»
+  qsa('#tabbar button').forEach(b => b.addEventListener('click', () => {
+    const tab = b.dataset.tab;
+    if (tab !== current) return setTab(tab);
+    TABS[tab].home?.();
+    qs('main#views').scrollTop = 0;
+  }));
   render();
   // загрузка могла что-то поправить сама — не молчим об этом
   notices.forEach((msg, i) => setTimeout(() => toast(msg, 4200), 600 + i * 800));

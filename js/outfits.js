@@ -418,7 +418,7 @@ const outfitSpace = {
 // живут в одной области видимости, и одинаковые имена сталкиваются
 const onav = { all: false, catId: null, subId: null, outfitId: null };
 
-const goOutfitsRoot = () => { onav.all = false; onav.catId = null; onav.subId = null; onav.outfitId = null; emit(); };
+export const goOutfitsRoot = () => { onav.all = false; onav.catId = null; onav.subId = null; onav.outfitId = null; emit(); };
 const openOutfitCat = id => { onav.catId = id; onav.subId = null; emit(); };
 const catOf = id => outfitCats().find(c => c.id === id) || null;
 

@@ -9,6 +9,8 @@ import { askArchivedInDay, copyOutfit } from './outfits.js';
 import { bgCss } from './bgs.js';
 
 let cursor = new Date();
+/** Повторное нажатие на вкладку возвращает календарь к сегодняшнему месяцу. */
+export const goCalendarHome = () => { cursor = new Date(); emit(); };
 const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль',
   'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];

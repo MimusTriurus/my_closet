@@ -493,7 +493,7 @@ function renderItemCard(root, item) {
         h('b', { class: item.brandId ? '' : 'muted' },
           entryName('brands', item.brandId) || 'производитель не указан'),
         h('span', {}, place)),
-      h('span', { class: 'worn' }, worn ? plural(worn, 'надевание', 'надевания', 'надеваний') : 'ещё не надето')
+      h('span', { class: 'worn' }, worn ? 'надето ' + plural(worn, 'раз', 'раза', 'раз') : 'ещё не надето')
     ),
 
     // цена — цифра, которую не всегда хочется видеть, поэтому блок всегда

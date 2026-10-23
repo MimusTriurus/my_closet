@@ -230,10 +230,10 @@ export function openItemForm(item, isNew = false) {
     let img = item.img;
     let colors = item.colors || [];
 
+    // снимок не нажимается: под ним стоят подписанные кнопки, а нажатие без
+    // опознавательных знаков — та же скрытая функция, от которой мы уходим
     const preview = h('div', {
-      class: 'tile pick-photo', title: 'Изменить фотографию',
-      style: { aspectRatio: '1', maxWidth: '190px', margin: '0 auto 12px', background: bgCss(item.bg) },
-      onclick: () => photoMenu()
+      class: 'tile', style: { aspectRatio: '1', maxWidth: '190px', margin: '0 auto 10px', background: bgCss(item.bg) }
     }, h('img', { src: urlFor(img) }));
 
     async function applyPhoto(blob) {
@@ -247,22 +247,23 @@ export function openItemForm(item, isNew = false) {
     }
 
     /**
-     * Замена фотографии и переобработка — одно место: это две операции над
-     * одним и тем же, и разводить их по разным кнопкам значит заставлять
-     * выбирать до того, как человек увидел снимок.
+     * Правка снимка и его замена разведены по двум кнопкам, хотя обе ведут
+     * в один редактор. Правят почти всегда, заменяют изредка — а спрятанное
+     * в списке частое действие стоит лишнего нажатия каждый раз.
      */
-    async function photoMenu() {
-      const act = await actionSheet('Фотография', [
-        { id: 'cam', icon: '📸', label: 'Снять заново' },
-        { id: 'file', icon: '🖼', label: 'Выбрать из галереи' },
-        { id: 'crop', icon: '✂️', label: 'Переобработать текущую' }
+    async function editCurrent() {
+      const blob = await openImageEditor(img, { autoAI: false });
+      if (blob) await applyPhoto(blob);
+    }
+
+    async function replacePhoto() {
+      const act = await actionSheet('Заменить фотографию', [
+        // не «снять заново»: снимка с камеры могло и не быть, фотография
+        // могла прийти из галереи
+        { id: 'cam', icon: '📸', label: 'Сделать новое фото' },
+        { id: 'file', icon: '🖼', label: 'Выбрать из галереи' }
       ]);
       if (!act) return;
-      if (act === 'crop') {
-        const blob = await openImageEditor(img, { autoAI: false });
-        if (blob) await applyPhoto(blob);
-        return;
-      }
       const src = act === 'cam' ? await captureFromCamera() : await pickImageFile();
       if (!src) return;
       // новый снимок проходит тот же путь, что и при добавлении вещи:
@@ -270,6 +271,13 @@ export function openItemForm(item, isNew = false) {
       const blob = await openImageEditor(src, { autoAI: true });
       if (blob) await applyPhoto(blob);
     }
+
+    const photoBtns = h('div', { class: 'photo-btns' },
+      h('button', { class: 'btn block', onclick: editCurrent }, '✎ Редактировать текущую фотографию'),
+      // рамка та же: без неё кнопка читается как подпись. Второстепенность
+      // показываем цветом текста, а не отсутствием очертаний
+      h('button', { class: 'btn block sub', onclick: replacePhoto }, 'Заменить фотографию')
+    );
 
     const bgRow = h('div', { class: 'palette-row' }, BGS.map(b =>
       h('button', {
@@ -297,7 +305,7 @@ export function openItemForm(item, isNew = false) {
     const modal = openModal({
       title: isNew ? 'Новая вещь' : 'Редактировать',
       body: h('div', {},
-        preview,
+        preview, photoBtns,
         h('div', { class: 'section-title' }, 'Фон карточки'), bgRow,
         h('label', { class: 'field' }, h('span', {}, 'Категория'), catSel),
         h('label', { class: 'field' }, h('span', {}, 'Подкатегория'), subSel),
@@ -307,10 +315,7 @@ export function openItemForm(item, isNew = false) {
         compositionGroup('Подкладка', mat.lining),
         h('label', { class: 'field' }, h('span', {}, 'Цена'),
           h('div', { class: 'row' }, priceInput, curInput)),
-        h('label', { class: 'field' }, h('span', {}, 'Комментарий'), noteInput),
-        h('button', {
-          class: 'btn block', style: { marginTop: '14px' }, onclick: () => photoMenu()
-        }, '🖼 Изменить фотографию')
+        h('label', { class: 'field' }, h('span', {}, 'Комментарий'), noteInput)
       ),
       foot: [
         h('button', { class: 'btn', onclick: () => modal.close() }, 'Отмена'),

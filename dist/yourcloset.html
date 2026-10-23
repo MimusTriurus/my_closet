@@ -1,3 +1,8 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
 <title>YourCloset</title>
 <style>
 :root { color-scheme: light; }
@@ -335,10 +340,11 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent-soft);bor
 .tools{display:flex;flex:none;gap:6px;overflow-x:auto;padding:8px 10px;background:var(--surface);border-top:1px solid var(--line);scrollbar-width:none}
 .tools::-webkit-scrollbar{display:none}
 .tool{
-  border:1px solid var(--line);background:var(--bg);border-radius:12px;padding:7px 10px;
-  font-size:11px;display:flex;flex-direction:column;align-items:center;gap:3px;min-width:60px;
+  border:1px solid var(--line);background:var(--bg);border-radius:12px;padding:7px 4px;
+  font-size:10px;line-height:1.15;display:flex;flex-direction:column;align-items:center;gap:3px;
+  flex:1 1 0;min-width:0;text-align:center;
 }
-.tool .ic{font-size:17px}
+.tool .ic{font-size:16px}
 .tool.active{background:var(--accent);border-color:var(--accent);color:#fff}
 .tool-opts{flex:none;padding:8px 12px;background:var(--surface);border-top:1px solid var(--line);font-size:12px}
 
@@ -364,6 +370,9 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent-soft);bor
   content:'';position:absolute;left:2px;top:8px;width:5px;height:5px;
   border-radius:50%;background:var(--accent)
 }
+/* палитра в окне: свотчи крупные, в несколько рядов — попасть пальцем */
+.palette-grid{display:flex;flex-wrap:wrap;gap:10px;padding:6px 0 2px}
+.palette-grid .swatch{width:52px;height:52px}
 .palette-row{display:flex;gap:8px;overflow-x:auto;padding:8px 0;scrollbar-width:none}
 .palette-row::-webkit-scrollbar{display:none}
 
@@ -448,6 +457,8 @@ video#cam{width:100%;border-radius:var(--r);background:#000}
 .btn-add:hover{border-color:var(--accent)}
 
 </style>
+</head>
+<body>
 
 <div id="app">
 
@@ -804,6 +815,8 @@ const bgCss = id => bgById(id).css;
 
 /* ===== state.js ===== */
 // Единое состояние приложения + персистентность в IndexedDB.
+
+
 
 const state = {
   items: [], outfits: [], collections: [], cats: [], calendar: [], trips: [],
@@ -1319,11 +1332,369 @@ async function deleteTrip(id) {
 }
 const tripById = id => state.trips.find(t => t.id === id);
 
+/* ===== cats.js ===== */
+// Категории и подкатегории — общий механизм на три пространства: гардероб,
+// архив вещей и образы. У каждого свой список, свои счётчики и свои
+// миниатюры, поэтому пространство описывается объектом и передаётся сюда.
+
+
+
+
+const nSubs = n => plural(n, 'подкатегория', 'подкатегории', 'подкатегорий');
+
+/**
+ * Список категорий пространства: переименовать, удалить, добавить.
+ * Подкатегорий здесь нет намеренно — они настраиваются изнутри своей
+ * категории, иначе завести подкатегорию можно было бы двумя путями.
+ */
+function openCategoryManager(space) {
+  const body = h('div', { class: 'list' });
+  openModal({ title: space.title, body, full: true });
+
+  function render() {
+    const list = space.cats();
+    fill(body,
+      ...list.map((c, i) => h('div', { class: 'lrow' },
+        // та же миниатюра, что и в списке разделов: фотография, а не пиктограмма
+        space.thumb(c),
+        h('div', { class: 't' },
+          h('b', {}, c.name),
+          h('span', {}, `${space.n(countIn(c))} · ${nSubs(c.subs.length)}`)),
+        // порядок меняется стрелками: на телефоне перетаскивание ненадёжно,
+        // а список категорий короткий
+        h('div', { class: 'ord' },
+          h('button', {
+            class: 'btn btn-sm', disabled: i === 0,
+            onclick: async () => { if (await moveCat(list, c.id, -1)) render(); }
+          }, '↑'),
+          h('button', {
+            class: 'btn btn-sm', disabled: i === list.length - 1,
+            onclick: async () => { if (await moveCat(list, c.id, 1)) render(); }
+          }, '↓')),
+        h('button', {
+          class: 'btn btn-sm', onclick: async () => {
+            const act = await actionSheet(c.name, [
+              { id: 'ren', icon: '✎', label: 'Переименовать' },
+              { id: 'del', icon: '🗑', label: 'Удалить категорию', danger: true }
+            ]);
+            if (act === 'ren') {
+              const n = await promptDialog('Переименовать', c.name);
+              if (n) { c.name = n; await saveCat(c); render(); }
+            } else if (act === 'del') {
+              // непустую категорию не удаляем: иначе её содержимое разом
+              // осталось бы без места. Сначала перенос
+              const n = countIn(c);
+              if (n) {
+                await alertDialog(`В категории «${c.name}» ${space.n(n)}. ${space.moveHint}`,
+                  'Категория не пуста');
+              } else if (await confirmDialog(`Удалить «${c.name}»?`)) {
+                await deleteCat(c.id); render();
+              }
+            }
+          }
+        }, '⋯')
+      )),
+      h('button', {
+        class: 'btn block primary', style: { marginTop: '12px' }, onclick: async () => {
+          const n = await promptDialog('Новая категория');
+          if (!n) return;
+          await saveCat({
+            id: uid('c'), name: n, order: nextCatOrder(space.cats()),
+            custom: true, scope: space.scope, subs: []
+          });
+          render();
+        }
+      }, '+ Добавить категорию')
+    );
+  }
+  render();
+}
+
+/** Подкатегории одной категории. Открывается кнопкой в её заголовке. */
+function openSubManager(space, cat, onDone) {
+  const body = h('div', { class: 'list' });
+  openModal({ title: cat.name, body, onClose: onDone });
+
+  function render() {
+    fill(body,
+      ...cat.subs.map(s => h('div', { class: 'lrow' },
+        h('div', { class: 't' },
+          h('b', {}, s.name),
+          h('span', {}, space.n(space.countSub(cat, s.id)))),
+        // действия те же и в том же месте, что у категорий: редкое и опасное
+        // живёт в «⋯», а не отдельной кнопкой рядом
+        h('button', {
+          class: 'btn btn-sm', onclick: async () => {
+            const act = await actionSheet(s.name, [
+              { id: 'ren', icon: '✎', label: 'Переименовать' },
+              { id: 'del', icon: '🗑', label: 'Удалить подкатегорию', danger: true }
+            ]);
+            if (act === 'ren') {
+              const n = await promptDialog('Переименовать', s.name);
+              if (n) { s.name = n; await saveCat(cat); render(); }
+            } else if (act === 'del') {
+              // содержимое остаётся в категории, его подхватит «Другое», —
+              // но сказать об этом надо: раньше подкатегория исчезала молча
+              const n = space.countSub(cat, s.id);
+              const ok = await confirmDialog(n
+                ? `Удалить «${s.name}»? ${space.n(n)} останется в категории, в разделе «Другое».`
+                : `Удалить «${s.name}»?`);
+              if (!ok) return;
+              cat.subs = cat.subs.filter(x => x.id !== s.id);
+              await space.detachSub(s.id);
+              await saveCat(cat); render();
+            }
+          }
+        }, '⋯')
+      )),
+      cat.subs.length ? null : h('p', { class: 'muted small' }, 'Пока пусто'),
+      h('button', {
+        class: 'btn block primary', style: { marginTop: '12px' }, onclick: async () => {
+          const n = await promptDialog('Новая подкатегория');
+          if (!n) return;
+          cat.subs.push({ id: uid('s'), name: n });
+          await saveCat(cat);
+          render();
+        }
+      }, '+ Добавить подкатегорию')
+    );
+  }
+  render();
+}
+
+/** Пространство по его scope — чтобы не передавать список руками. */
+const catsOf = scope => catsIn(scope);
+
+/* ===== fields.js ===== */
+// Списочные поля карточки: выбор значения, пополнение и правка списка.
+// Список настраивается там же, где используется, — отдельного места для
+// справочников нет, как и у подкатегорий.
+
+
+
+
+
+const sameName = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/** Ближайший цвет палитры к снятому оттенку: камера выбирает, а не заводит. */
+function nearestColor(hex) {
+  let best = null, bd = 1e9;
+  for (const c of listItems('colors')) {
+    if (!c.hex) continue;
+    const d = colorDist(hex, c.hex);
+    if (d < bd) { bd = d; best = c; }
+  }
+  return best;
+}
+
+/**
+ * Новый цвет: название и оттенок. Оттенки с фотографии предлагаются
+ * подсказкой — чтобы шартрез завёлся тем самым цветом, что на юбке,
+ * а не подобранным на глаз.
+ */
+function createColor(suggest) {
+  return new Promise(res => {
+    let done = false;
+    const nameInput = h('input', { type: 'text', placeholder: 'Например, шартрез' });
+    const hexInput = h('input', { type: 'color', class: 'hex', value: suggest[0] || '#8a9a5b' });
+    const row = h('div', { class: 'palette-row' }, suggest.map((hex, i) => h('button', {
+      class: 'swatch' + (i === 0 ? ' sel' : ''), style: { background: hex }, title: 'Цвет со снимка',
+      onclick: e => {
+        hexInput.value = hex;
+        [...row.children].forEach(x => x.classList.remove('sel'));
+        e.currentTarget.classList.add('sel');
+      }
+    })));
+    const modal = openModal({
+      title: 'Новый цвет',
+      body: h('div', {},
+        suggest.length ? h('div', { class: 'section-title' }, 'Со снимка') : null,
+        suggest.length ? row : null,
+        h('label', { class: 'field' }, h('span', {}, 'Оттенок'), hexInput),
+        h('label', { class: 'field' }, h('span', {}, 'Название'), nameInput)),
+      foot: [
+        h('button', { class: 'btn', onclick: () => modal.close() }, 'Отмена'),
+        h('button', {
+          class: 'btn primary', onclick: () => {
+            const name = nameInput.value.trim();
+            if (!name) return nameInput.focus();
+            done = true;
+            res({ name, hex: hexInput.value });
+            modal.close();
+          }
+        }, 'Добавить')
+      ],
+      onClose: () => { if (!done) res(null); }
+    });
+  });
+}
+
+/** Новое значение списка. Повтор не заводим — возвращаем то, что уже есть. */
+async function createEntry(key, suggest = []) {
+  const def = LIST_DEFS[key];
+  const patch = key === 'colors'
+    ? await createColor(suggest)
+    : { name: (await promptDialog(def.add, '', 'Название') || '').trim() };
+  if (!patch || !patch.name) return null;
+  const twin = listItems(key).find(e => sameName(e.name, patch.name));
+  if (twin) {
+    await alertDialog(`«${twin.name}» в списке уже есть.`, 'Такое уже есть');
+    return twin;
+  }
+  return addListEntry(key, patch);
+}
+
+/**
+ * Удаление значения. Пустое уходит молча; то, на которое ссылаются вещи,
+ * сначала предлагает перенос: вещь, потерявшая одну отметку из нескольких,
+ * нигде потом не всплывёт.
+ */
+async function removeEntry(key, entry) {
+  const n = listUsage(key, entry.id);
+  if (!n) { await deleteListEntry(key, entry.id); return true; }
+
+  const act = await actionSheet(`«${entry.name}» · ${nItems(n)}`, [
+    { id: 'move', icon: '→', label: 'Перенести в другое значение' },
+    { id: 'drop', label: 'Просто удалить отметку', muted: true }
+  ]);
+  if (act === 'drop') { await deleteListEntry(key, entry.id, null); return true; }
+  if (act !== 'move') return false;
+
+  const dest = await openListPicker(key, {
+    title: `Перенести «${entry.name}» в…`, exclude: [entry.id], manage: false
+  });
+  if (!dest) return false;
+  await deleteListEntry(key, entry.id, dest);
+  return true;
+}
+
+/**
+ * Окно выбора значения. single: нажатие на строку и есть выбор.
+ * multi: строки отмечаются, результат отдаётся по «Готово».
+ * Возвращает id (single), массив id (multi), '' — снять значение, null — отмена.
+ */
+function openListPicker(key, {
+  selected = null, multi = false, exclude = [], title = null, manage = true, suggest = [],
+  first = null
+} = {}) {
+  const def = LIST_DEFS[key];
+  return new Promise(res => {
+    let done = false;
+    const picked = new Set(multi ? (selected || []) : []);
+    const finish = v => { done = true; res(v); modal.close(); };
+
+    const body = h('div', {});
+    const modal = openModal({
+      title: title || def.title,
+      body,
+      foot: multi
+        ? [h('button', { class: 'btn primary', onclick: () => finish([...picked]) }, 'Готово')]
+        : (selected && !exclude.length
+          ? [h('button', { class: 'btn', onclick: () => finish('') }, 'Убрать значение')]
+          : null),
+      onClose: () => { if (!done) res(null); }
+    });
+
+    function render() {
+      const list = listItems(key).filter(e => !exclude.includes(e.id));
+      fill(body,
+        h('div', { class: 'list' },
+          // особое значение фильтра — «без цвета» и ему подобные
+          first ? h('div', {
+            class: 'lrow' + (first.id === selected ? ' on' : ''),
+            onclick: () => finish(first.id)
+          }, h('div', { class: 't' }, h('b', { class: 'muted' }, first.name))) : null,
+          list.map(e => {
+            const on = multi ? picked.has(e.id) : e.id === selected;
+            return h('div', {
+              class: 'lrow' + (on ? ' on' : ''),
+              onclick: () => {
+                if (!multi) return finish(e.id);
+                picked.has(e.id) ? picked.delete(e.id) : picked.add(e.id);
+                render();
+              }
+            },
+              e.hex ? h('span', { class: 'dot', style: { background: e.hex } }) : null,
+              h('div', { class: 't' }, h('b', {}, e.name)),
+              on ? h('span', { class: 'tick' }, '✓') : null,
+              manage ? h('button', {
+                class: 'icon-btn', title: 'Изменить',
+                onclick: async ev => {
+                  ev.stopPropagation();
+                  const act = await actionSheet(e.name, [
+                    { id: 'ren', icon: '✎', label: 'Переименовать' },
+                    ...(e.hex ? [{ id: 'hue', icon: '🎨', label: 'Изменить оттенок' }] : []),
+                    { id: 'del', icon: '🗑', label: 'Удалить из списка', danger: true }
+                  ]);
+                  if (act === 'ren') {
+                    const n = await promptDialog('Переименовать', e.name);
+                    if (n && !sameName(n, e.name)) await updateListEntry(key, e.id, { name: n.trim() });
+                  } else if (act === 'hue') {
+                    const hex = await pickHue(e);
+                    if (hex) await updateListEntry(key, e.id, { hex });
+                  } else if (act === 'del') {
+                    if (await removeEntry(key, e)) picked.delete(e.id);
+                  }
+                  render();
+                }
+              }, '⋯') : null
+            );
+          }),
+          list.length ? null : h('p', { class: 'muted small' }, 'Список пуст.')
+        ),
+        manage ? h('button', {
+          class: 'btn block btn-add', style: { marginTop: '10px' },
+          onclick: async () => {
+            const e = await createEntry(key, suggest);
+            if (!e) return render();
+            if (multi) { picked.add(e.id); render(); } else finish(e.id);
+          }
+        }, '+ ' + def.add) : null,
+        // камера подбирает ближайший цвет палитры — заводить новый она не должна
+        key === 'colors' ? h('button', {
+          class: 'btn block', style: { marginTop: '6px' },
+          onclick: async () => {
+            const hex = await scanColorFromCamera();
+            const near = hex && nearestColor(hex);
+            if (!near) return;
+            if (multi) { picked.add(near.id); render(); } else finish(near.id);
+          }
+        }, '📷 Подобрать камерой') : null
+      );
+    }
+    render();
+  });
+}
+
+/** Смена оттенка существующего цвета: вещи хранят ссылку, правка общая. */
+function pickHue(entry) {
+  return new Promise(res => {
+    let done = false;
+    const input = h('input', { type: 'color', class: 'hex', value: entry.hex || '#808080' });
+    const modal = openModal({
+      title: entry.name,
+      body: h('label', { class: 'field' }, h('span', {}, 'Оттенок'), input),
+      foot: [
+        h('button', { class: 'btn', onclick: () => modal.close() }, 'Отмена'),
+        h('button', {
+          class: 'btn primary',
+          onclick: () => { done = true; res(input.value); modal.close(); }
+        }, 'Сохранить')
+      ],
+      onClose: () => { if (!done) res(null); }
+    });
+  });
+}
+
+/** Подпись значения для карточки: пусто — приглушённое «не указано». */
+const entryName = (key, id) => listEntry(key, id)?.name || '';
+
 /* ===== editor.js ===== */
 // Редактор изображения вещи: ML-удаление фона + ручные инструменты (волшебная палочка,
 // ластик, восстановление, прямоугольный и свободный кроп).
 // Снимок можно увеличить — щипком, колесом или кнопками; это нужно ластику,
 // которым убирают мелочь вроде вешалки или травинки под подолом.
+
 
 const IMGLY_URL = 'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.8/+esm';
 const MAX_SIDE = 1400;
@@ -1827,6 +2198,8 @@ async function openImageEditor(source, { autoAI = false } = {}) {
 /* ===== capture.js ===== */
 // Источники изображений: галерея, камера, а также «пипетка» цвета с камеры.
 
+
+
 function pickImageFile() {
   return new Promise(res => {
     const input = qs('#file-input');
@@ -1948,12 +2321,15 @@ function scanColorFromCamera() {
 /* ===== picker.js ===== */
 // Универсальный выбор вещей / образов (для образов, календаря, чемодана).
 
+
+
+
 const NO_CAT = '__nocat';
 const NO_SUB = '__nosub';
 const ALL = '__all';
 
 /** Строка-папка. Одна на оба выбора: вещи и образы ходят одинаково. */
-const navRow = ({ label, note, onclick, muted, back }) => h('div', {
+const pickRow = ({ label, note, onclick, muted, back }) => h('div', {
   class: 'lrow nav' + (muted ? ' soft' : ''), onclick
 },
   back ? h('span', { class: 'chev back' }, '\u2039') : null,
@@ -2020,17 +2396,17 @@ function pickItems({ title = 'Выбрать вещи', selected = [], multi = t
         titleEl.textContent = title;
         return fill(body,
           h('div', { class: 'list' },
-            navRow({
+            pickRow({
               label: 'Все вещи', note: nItems(visibleItems().length),
               onclick: () => go(ALL)
             }),
-            ...cats.map(c => navRow({
+            ...cats.map(c => pickRow({
               label: `${c.icon || ''} ${c.name}`.trim(),
               note: nItems(inCat(c.id).length)
                 + (subsOf(c).length ? ' · ' + subsOf(c).length + ' подкат.' : ''),
               onclick: () => go(c.id)
             })),
-            loose ? navRow({
+            loose ? pickRow({
               label: 'Без категории', note: nItems(loose), muted: true,
               onclick: () => go(NO_CAT)
             }) : null
@@ -2049,12 +2425,12 @@ function pickItems({ title = 'Выбрать вещи', selected = [], multi = t
       if (cat && subs.length && !subId) {
         return fill(body,
           h('div', { class: 'list' },
-            navRow({ label: 'Категории', back: true, onclick: () => go(null) }),
-            ...subs.map(sb => navRow({
+            pickRow({ label: 'Категории', back: true, onclick: () => go(null) }),
+            ...subs.map(sb => pickRow({
               label: sb.name, note: nItems(inCat(cat.id).filter(i => i.subId === sb.id).length),
               onclick: () => go(cat.id, sb.id)
             })),
-            sublessN ? navRow({
+            sublessN ? pickRow({
               label: 'Другое', note: nItems(sublessN), muted: true,
               onclick: () => go(cat.id, NO_SUB)
             }) : null
@@ -2065,7 +2441,7 @@ function pickItems({ title = 'Выбрать вещи', selected = [], multi = t
       const list = listed();
       const up = subId ? () => go(cat.id) : cats.length ? () => go(null) : null;
       fill(body,
-        up ? h('div', { class: 'list' }, navRow({ label: 'Назад', back: true, onclick: up })) : null,
+        up ? h('div', { class: 'list' }, pickRow({ label: 'Назад', back: true, onclick: up })) : null,
         list.length ? h('div', { class: 'grid' }, list.map(tile))
           : h('div', { class: 'empty' }, 'Здесь пусто')
       );
@@ -2141,17 +2517,17 @@ function pickOutfits({ title = 'Выбрать образы', selected = [], mul
         titleEl.textContent = title;
         return fill(body,
           h('div', { class: 'list' },
-            navRow({
+            pickRow({
               label: 'Все образы', note: nOutfits(state.outfits.length),
               onclick: () => { catId = ALL; render(); }
             }),
-            ...cats.map(c => navRow({
+            ...cats.map(c => pickRow({
               label: c.name,
               note: nOutfits(inCat(c.id).length)
                 + (subsOf(c).length ? ' · ' + subsOf(c).length + ' подкат.' : ''),
               onclick: () => go(c.id)
             })),
-            loose ? navRow({
+            loose ? pickRow({
               label: 'Без категории', note: nOutfits(loose), muted: true,
               onclick: () => go(NO_CAT)
             }) : null
@@ -2171,12 +2547,12 @@ function pickOutfits({ title = 'Выбрать образы', selected = [], mul
       if (cat && subs.length && !subId) {
         return fill(body,
           h('div', { class: 'list' },
-            navRow({ label: 'Категории', back: true, onclick: () => go(null) }),
-            ...subs.map(sb => navRow({
+            pickRow({ label: 'Категории', back: true, onclick: () => go(null) }),
+            ...subs.map(sb => pickRow({
               label: sb.name, note: nOutfits(inCat(cat.id).filter(o => o.subId === sb.id).length),
               onclick: () => go(cat.id, sb.id)
             })),
-            sublessN ? navRow({
+            sublessN ? pickRow({
               label: 'Другое', note: nOutfits(sublessN), muted: true,
               onclick: () => go(cat.id, NO_SUB)
             }) : null
@@ -2187,7 +2563,7 @@ function pickOutfits({ title = 'Выбрать образы', selected = [], mul
       const list = catId === ALL ? state.outfits : listed();
       const up = subId ? () => go(cat.id) : cats.length ? () => go(null) : null;
       fill(body,
-        up ? h('div', { class: 'list' }, navRow({ label: 'Назад', back: true, onclick: up })) : null,
+        up ? h('div', { class: 'list' }, pickRow({ label: 'Назад', back: true, onclick: up })) : null,
         list.length ? h('div', { class: 'grid g2' }, list.map(tile))
           : h('div', { class: 'empty' }, 'Здесь пусто')
       );
@@ -2207,15 +2583,14 @@ function pickOutfits({ title = 'Выбрать образы', selected = [], mul
 
 /* ===== closet.js ===== */
 // Вкладка «Гардероб»: категории, подкатегории, фильтр по цвету, сортировка, карточка вещи.
-import {
-  fill, h, qs, urlFor, toast, openModal, confirmDialog, actionSheet, busy, plural, nItems, nOutfits
-} from './ui.js';
-import {
-  state, saveItem, saveItems, deleteItem, catById, subById, countInCat,
-  visibleItems, archivedItems, itemById, closetCats, archiveCats, countInArcCat,
-  SCOPE_CLOSET, SCOPE_ARCHIVE,
-  createItem, sortingCat, emit, listEntry, lastCurrency, wearCount, closetItems
-} from './state.js';
+
+
+
+
+
+
+
+
 
 /**
  * Фильтры живут в «Все вещи» и «Весь архив» — по категориям ходит nav.
@@ -3314,15 +3689,14 @@ function renderCloset(root) {
 
 /* ===== outfits.js ===== */
 // Вкладка «Образы»: папки с категориями, редактор образа на Konva, рандомайзер.
-import {
-  fill, h, qs, urlFor, toast, openModal, confirmDialog, promptDialog, actionSheet, busy,
-  plural, nItems, nOutfits
-} from './ui.js';
-import {
-  state, saveOutfit, deleteOutfit, outfitById, itemById, visibleItems, emit,
-  catById, subById, outfitCats, countInOutfitCat, SCOPE_OUTFIT,
-  outfitItems, archivedInOutfit
-} from './state.js';
+
+
+
+
+
+
+
+
 
 const SW = 640, SH = 860;           // логический размер холста образа
 
@@ -3335,12 +3709,11 @@ async function openOutfitEditor(existing, isCopy = false) {
     : {
       id: uid('of'), name: '', bg: 'cream', layers: [], createdAt: Date.now(),
       // образ ложится в ту папку, из которой его начали собирать
-      catId: nav.catId === OTHER ? null : nav.catId, subId: nav.subId === OTHER ? null : nav.subId
+      catId: onav.catId === OTHER ? null : onav.catId, subId: onav.subId === OTHER ? null : onav.subId
     };
 
   const host = h('div', { id: 'stage-host' });
   const toolbar = h('div', { class: 'tools' });
-  const opts = h('div', { class: 'tool-opts' });
   /**
    * Подсказки живут в отдельном окне, а не на экране редактора: все сразу
    * они занимали треть высоты листа, а лист здесь — главное. Кнопка рядом
@@ -3368,7 +3741,7 @@ async function openOutfitEditor(existing, isCopy = false) {
     title: !existing || isCopy ? 'Новый образ' : 'Редактировать образ',
     full: true,
     body: h('div', { style: { display: 'flex', flexDirection: 'column', height: '100%', margin: '-12px' } },
-      host, opts, toolbar),
+      host, toolbar),
     onClose: () => settle(saved),
     foot: [
       h('button', { class: 'btn', onclick: () => modal.close() }, 'Отмена'),
@@ -3516,8 +3889,29 @@ async function openOutfitEditor(existing, isCopy = false) {
 
   function selected() { return tr.nodes()[0] || null; }
 
+  /**
+   * Палитра фона открывается окном, а не разворачивается в строке под
+   * листом: на телефоне лист и так упирается в высоту экрана, и постоянная
+   * полоса со свотчами отнимала у него около сотни пикселей. Фон меняют
+   * редко — ему хватает кнопки.
+   */
+  const openBg = () => {
+    const m = openModal({
+      title: 'Фон листа',
+      body: h('div', { class: 'palette-grid' }, BGS.map(b =>
+        h('button', {
+          class: 'swatch' + (outfit.bg === b.id ? ' sel' : ''),
+          style: { background: b.css, border: b.id === 'none' ? '1px dashed #bbb' : '' },
+          title: b.name,
+          onclick: () => { applyBg(b.id); m.close(); }
+        })
+      ))
+    });
+  };
+
   const TOOLS = [
     { ic: '➕', label: 'Вещи', fn: addItems },
+    { ic: '🎨', label: 'Фон', fn: openBg },
     // название на вырост: кнопка должна собирать вещи по фильтру (например,
     // все синие и красные — проверить сочетаемость). Пока за ним случайный
     // подбор, поэтому он и спрашивает, прежде чем стереть собранное
@@ -3533,32 +3927,14 @@ async function openOutfitEditor(existing, isCopy = false) {
         layer.batchDraw();
       }
     },
-    { ic: '🗑', label: 'Убрать', fn: () => { const n = selected(); if (n) { n.destroy(); tr.nodes([]); layer.batchDraw(); } } }
+    { ic: '🗑', label: 'Убрать', fn: () => { const n = selected(); if (n) { n.destroy(); tr.nodes([]); layer.batchDraw(); } } },
+    { ic: '❔', label: 'Подсказки', fn: openHints }
   ];
   fill(toolbar, ...TOOLS.map(t =>
     h('button', { class: 'tool', onclick: t.fn }, h('span', { class: 'ic' }, t.ic), h('span', {}, t.label))));
 
-  // Палитра стоит на месте всегда. Раньше её показывала кнопка «Фон», но
-  // показанная однажды, она оставалась насовсем и вытесняла подсказку —
-  // кнопка после этого выглядела ничего не делающей. Места хватает обеим
-  fill(opts,
-    h('div', { class: 'row', style: { gap: '8px', marginBottom: '2px' } },
-      h('span', { class: 'section-title spacer', style: { margin: '0' } }, 'Фон листа'),
-      h('button', { class: 'btn btn-sm', onclick: openHints }, '❔ Подсказки')),
-    h('div', { class: 'palette-row' }, BGS.map(b =>
-      h('button', {
-        class: 'swatch' + (outfit.bg === b.id ? ' sel' : ''),
-        style: { background: b.css },
-        onclick: e => {
-          applyBg(b.id);
-          [...e.currentTarget.parentNode.children].forEach(x => x.classList.remove('sel'));
-          e.currentTarget.classList.add('sel');
-        }
-      })
-    )));
-
-  // пересчитываем, когда все полосы внизу уже на месте: первый расчёт шёл
-  // по пустой палитре и ошибался на её высоту
+  // пересчитываем, когда строка инструментов уже на месте: первый расчёт
+  // шёл по пустой строке и ошибался на её высоту
   viewScale = fit();
 
   let saved = null;
@@ -3622,14 +3998,16 @@ const outfitSpace = {
  * Устроено как «Гардероб»: список категорий → подкатегории → образы.
  * «Другое» появляется само, когда в категории есть образы без подкатегории.
  */
-const nav = { all: false, catId: null, subId: null, outfitId: null };
+// имя своё, не общее с гардеробом: в однофайловой сборке все модули
+// живут в одной области видимости, и одинаковые имена сталкиваются
+const onav = { all: false, catId: null, subId: null, outfitId: null };
 
-const goRoot = () => { nav.all = false; nav.catId = null; nav.subId = null; nav.outfitId = null; emit(); };
-const openCat = id => { nav.catId = id; nav.subId = null; emit(); };
+const goOutfitsRoot = () => { onav.all = false; onav.catId = null; onav.subId = null; onav.outfitId = null; emit(); };
+const openOutfitCat = id => { onav.catId = id; onav.subId = null; emit(); };
 const catOf = id => outfitCats().find(c => c.id === id) || null;
 
 /** Образы раздела. Ссылка на удалённую подкатегорию считается отсутствующей. */
-function outfitsIn(catId, subId) {
+function inOutfitFolder(catId, subId) {
   const want = catId === OTHER ? null : catId;
   const subs = new Set((catOf(want)?.subs || []).map(s => s.id));
   const subOf = o => (subs.has(o.subId) ? o.subId : null);
@@ -3638,30 +4016,30 @@ function outfitsIn(catId, subId) {
       && (subId == null || (subId === OTHER ? !subOf(o) : subOf(o) === subId)))
     .sort((a, b) => b.createdAt - a.createdAt);
 }
-const latestOutfit = (catId, subId) => outfitsIn(catId, subId)[0] || null;
+const latestOutfit = (catId, subId) => inOutfitFolder(catId, subId)[0] || null;
 
 function outfitsNav() {
-  if (nav.outfitId) {
-    const o = outfitById(nav.outfitId);
-    if (o) return { title: o.name || 'Образ', back: closeCard };
+  if (onav.outfitId) {
+    const o = outfitById(onav.outfitId);
+    if (o) return { title: o.name || 'Образ', back: closeOutfitCard };
   }
-  if (nav.all) return { title: 'Все образы', back: goRoot };
+  if (onav.all) return { title: 'Все образы', back: goOutfitsRoot };
   // «Другое» — не настоящая категория, своего заголовка у неё иначе не будет
-  if (nav.catId === OTHER) return { title: 'Другое', back: goRoot };
-  const cat = catOf(nav.catId);
+  if (onav.catId === OTHER) return { title: 'Другое', back: goOutfitsRoot };
+  const cat = catOf(onav.catId);
   if (!cat) return null;
-  if (!nav.subId) {
+  if (!onav.subId) {
     return {
-      title: cat.name, back: goRoot,
+      title: cat.name, back: goOutfitsRoot,
       action: { icon: '📂', title: 'Подкатегории', onclick: () => openSubManager(outfitSpace, cat, emit) }
     };
   }
-  const name = nav.subId === OTHER ? 'Другое' : cat.subs.find(s => s.id === nav.subId)?.name;
-  return { title: name || cat.name, back: () => { nav.subId = null; emit(); } };
+  const name = onav.subId === OTHER ? 'Другое' : cat.subs.find(s => s.id === onav.subId)?.name;
+  return { title: name || cat.name, back: () => { onav.subId = null; emit(); } };
 }
 
 /* ---------- карточка образа ---------- */
-const closeCard = () => { nav.outfitId = null; emit(); };
+const closeOutfitCard = () => { onav.outfitId = null; emit(); };
 
 /**
  * Называем архивные вещи по производителю — но только те, у кого он есть.
@@ -3710,7 +4088,7 @@ function renderOutfitCard(root, o) {
     h('div', { class: 'section-title' }, 'Вещи в образе'),
     items.length ? h('div', { class: 'grid' }, items.map(it => h('div', {
       class: 'tile' + (it.archived ? ' gone' : ''), style: { background: bgCss(it.bg) },
-      onclick: () => { closeCard(); openItemCard(it); }
+      onclick: () => { closeOutfitCard(); openItemCard(it); }
     }, h('img', { src: urlFor(it.img) }))))
       : h('p', { class: 'muted small' }, 'Вещей из гардероба в образе не осталось.'),
 
@@ -3746,7 +4124,7 @@ function copyOutfit(o, drop = []) {
     createdAt: Date.now()
   };
   if (drop.length) copy.layers = copy.layers.filter(l => !drop.includes(l.itemId));
-  nav.outfitId = null;
+  onav.outfitId = null;
   return openOutfitEditor(copy, true);
 }
 
@@ -3756,7 +4134,7 @@ async function removeOutfit(o) {
     ? `Образ использован в ${plural(days, 'дне', 'днях', 'днях')} календаря. Удалить вместе с записями?`
     : 'Удалить образ?';
   if (!await confirmDialog(text)) return;
-  closeCard();
+  closeOutfitCard();
   await deleteOutfit(o.id);
   toast(days ? 'Образ и записи удалены' : 'Образ удалён');
 }
@@ -3829,7 +4207,7 @@ const outfitTile = o => {
   const gone = archivedInOutfit(o).length;
   return h('div', {
     class: 'tile' + (gone ? ' has-gone' : ''), style: { background: bgCss(o.bg) },
-    onclick: () => { nav.outfitId = o.id; emit(); }
+    onclick: () => { onav.outfitId = o.id; emit(); }
   },
     h('img', { src: urlFor(o.preview) }),
     gone ? h('span', { class: 'gone-mark', title: 'В образе есть вещь из архива' }, '◷') : null,
@@ -3851,25 +4229,25 @@ function outfitGrid(root, list, emptyText) {
 
 function renderOutfitRoot(root) {
   const cats = outfitCats().sort((a, b) => a.order - b.order);
-  const loose = outfitsIn(OTHER, null).length;
+  const loose = inOutfitFolder(OTHER, null).length;
 
   fill(root,
     h('div', { class: 'list' },
       navRow({
         thumbNode: collageThumb(state.outfits, o => o.preview), title: 'Все образы',
         note: nOutfits(state.outfits.length),
-        onclick: () => { nav.all = true; emit(); }
+        onclick: () => { onav.all = true; emit(); }
       }),
       ...cats.map(c => navRow({
         thumbNode: previewOf(latestOutfit(c.id, null)), title: c.name,
         note: nOutfits(countInOutfitCat(c.id))
           + (c.subs.length ? ' · ' + plural(c.subs.length, 'подкатегория', 'подкатегории', 'подкатегорий') : ''),
-        onclick: () => openCat(c.id)
+        onclick: () => openOutfitCat(c.id)
       })),
       loose ? navRow({
         thumbNode: previewOf(latestOutfit(OTHER, null)), title: 'Другое', muted: true,
         note: nOutfits(loose) + ' без категории',
-        onclick: () => openCat(OTHER)
+        onclick: () => openOutfitCat(OTHER)
       }) : null
     ),
     h('button', {
@@ -3881,19 +4259,19 @@ function renderOutfitRoot(root) {
   root.style.paddingBottom = '';
 }
 
-function renderCat(root, cat) {
-  const loose = outfitsIn(cat.id, OTHER).length;
+function renderOutfitCat(root, cat) {
+  const loose = inOutfitFolder(cat.id, OTHER).length;
   fill(root,
     h('div', { class: 'list' },
       ...cat.subs.map(s => navRow({
         thumbNode: previewOf(latestOutfit(cat.id, s.id)), title: s.name,
-        note: nOutfits(outfitsIn(cat.id, s.id).length),
-        onclick: () => { nav.subId = s.id; emit(); }
+        note: nOutfits(inOutfitFolder(cat.id, s.id).length),
+        onclick: () => { onav.subId = s.id; emit(); }
       })),
       loose ? navRow({
         thumbNode: previewOf(latestOutfit(cat.id, OTHER)), title: 'Другое', muted: true,
         note: nOutfits(loose) + ' без подкатегории',
-        onclick: () => { nav.subId = OTHER; emit(); }
+        onclick: () => { onav.subId = OTHER; emit(); }
       }) : null
     ),
     h('button', { class: 'fab', onclick: () => openOutfitEditor(null), title: 'Собрать образ' }, '+')
@@ -3902,37 +4280,39 @@ function renderCat(root, cat) {
 }
 
 function renderOutfits(root) {
-  if (nav.outfitId) {
-    const o = outfitById(nav.outfitId);
+  if (onav.outfitId) {
+    const o = outfitById(onav.outfitId);
     if (o) return renderOutfitCard(root, o);
-    nav.outfitId = null;
+    onav.outfitId = null;
   }
-  if (nav.all) return outfitGrid(root, state.outfits, 'Образов пока нет. Нажмите «+» внизу справа.');
+  if (onav.all) return outfitGrid(root, state.outfits, 'Образов пока нет. Нажмите «+» внизу справа.');
 
-  if (nav.catId === OTHER) {
-    const loose = outfitsIn(OTHER, null);
-    if (!loose.length) { nav.catId = null; return renderOutfitRoot(root); }
+  if (onav.catId === OTHER) {
+    const loose = inOutfitFolder(OTHER, null);
+    if (!loose.length) { onav.catId = null; return renderOutfitRoot(root); }
     return outfitGrid(root, loose, 'Здесь пусто.');
   }
-  const cat = catOf(nav.catId);
-  if (!cat) { nav.catId = null; nav.subId = null; return renderOutfitRoot(root); }
+  const cat = catOf(onav.catId);
+  if (!cat) { onav.catId = null; onav.subId = null; return renderOutfitRoot(root); }
 
-  if (!nav.subId) {
+  if (!onav.subId) {
     return cat.subs.length
-      ? renderCat(root, cat)
-      : outfitGrid(root, outfitsIn(cat.id), `В категории «${cat.name}» пока пусто.`);
+      ? renderOutfitCat(root, cat)
+      : outfitGrid(root, inOutfitFolder(cat.id), `В категории «${cat.name}» пока пусто.`);
   }
-  const list = outfitsIn(cat.id, nav.subId);
-  if (nav.subId === OTHER && !list.length) { nav.subId = null; return renderCat(root, cat); }
+  const list = inOutfitFolder(cat.id, onav.subId);
+  if (onav.subId === OTHER && !list.length) { onav.subId = null; return renderOutfitCat(root, cat); }
   outfitGrid(root, list, 'Здесь пусто.');
 }
 
 /* ===== calendar.js ===== */
 // Вкладка «Календарь»: какой образ надет в какой день. Только образы —
 // отдельные вещи сюда не кладутся, иначе у счётчика носок два источника.
-import {
-  fill, h, urlFor, openModal, actionSheet, confirmDialog, iso, fmtDate, plural
-} from './ui.js';
+
+
+
+
+
 
 let cursor = new Date();
 const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
@@ -4087,6 +4467,12 @@ function renderCalendar(root) {
 // Вкладка «Чемодан»: список вещей на поездку с отметками «уложено».
 // Поездка хранит только идентификаторы вещей — образы здесь не живут,
 // кнопка «из Образа» просто разворачивает образ в его вещи.
+
+
+
+
+
+
 
 const progress = t => ({
   total: t.itemIds?.length || 0,
@@ -4322,6 +4708,9 @@ function renderPacking(root) {
 // Настройки: резервная копия — экспорт и импорт всего гардероба одним JSON.
 // В приложении это Google Drive; в прототипе — обычный файл, логика та же.
 
+
+
+
 const BLOB_FIELDS = { items: ['img'], outfits: ['preview'] };
 
 const blobToDataURL = b => new Promise(res => {
@@ -4412,6 +4801,13 @@ function openSettings() {
 /* ===== app.js ===== */
 // Точка входа: загрузка состояния, переключение вкладок, перерисовка.
 
+
+
+
+
+
+
+
 const TABS = {
   closet: { title: 'Гардероб', render: renderCloset, nav: closetNav },
   outfits: { title: 'Образы', render: renderOutfits, nav: outfitsNav },
@@ -4473,3 +4869,5 @@ boot().catch(e => {
   document.body.innerHTML = '<p style="padding:24px">Ошибка запуска: ' + e.message + '</p>';
 });
 </script>
+</body>
+</html>

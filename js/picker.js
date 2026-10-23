@@ -8,7 +8,7 @@ const NO_SUB = '__nosub';
 const ALL = '__all';
 
 /** Строка-папка. Одна на оба выбора: вещи и образы ходят одинаково. */
-const navRow = ({ label, note, onclick, muted, back }) => h('div', {
+const pickRow = ({ label, note, onclick, muted, back }) => h('div', {
   class: 'lrow nav' + (muted ? ' soft' : ''), onclick
 },
   back ? h('span', { class: 'chev back' }, '\u2039') : null,
@@ -75,17 +75,17 @@ export function pickItems({ title = 'Выбрать вещи', selected = [], mu
         titleEl.textContent = title;
         return fill(body,
           h('div', { class: 'list' },
-            navRow({
+            pickRow({
               label: 'Все вещи', note: nItems(visibleItems().length),
               onclick: () => go(ALL)
             }),
-            ...cats.map(c => navRow({
+            ...cats.map(c => pickRow({
               label: `${c.icon || ''} ${c.name}`.trim(),
               note: nItems(inCat(c.id).length)
                 + (subsOf(c).length ? ' · ' + subsOf(c).length + ' подкат.' : ''),
               onclick: () => go(c.id)
             })),
-            loose ? navRow({
+            loose ? pickRow({
               label: 'Без категории', note: nItems(loose), muted: true,
               onclick: () => go(NO_CAT)
             }) : null
@@ -104,12 +104,12 @@ export function pickItems({ title = 'Выбрать вещи', selected = [], mu
       if (cat && subs.length && !subId) {
         return fill(body,
           h('div', { class: 'list' },
-            navRow({ label: 'Категории', back: true, onclick: () => go(null) }),
-            ...subs.map(sb => navRow({
+            pickRow({ label: 'Категории', back: true, onclick: () => go(null) }),
+            ...subs.map(sb => pickRow({
               label: sb.name, note: nItems(inCat(cat.id).filter(i => i.subId === sb.id).length),
               onclick: () => go(cat.id, sb.id)
             })),
-            sublessN ? navRow({
+            sublessN ? pickRow({
               label: 'Другое', note: nItems(sublessN), muted: true,
               onclick: () => go(cat.id, NO_SUB)
             }) : null
@@ -120,7 +120,7 @@ export function pickItems({ title = 'Выбрать вещи', selected = [], mu
       const list = listed();
       const up = subId ? () => go(cat.id) : cats.length ? () => go(null) : null;
       fill(body,
-        up ? h('div', { class: 'list' }, navRow({ label: 'Назад', back: true, onclick: up })) : null,
+        up ? h('div', { class: 'list' }, pickRow({ label: 'Назад', back: true, onclick: up })) : null,
         list.length ? h('div', { class: 'grid' }, list.map(tile))
           : h('div', { class: 'empty' }, 'Здесь пусто')
       );
@@ -196,17 +196,17 @@ export function pickOutfits({ title = 'Выбрать образы', selected = 
         titleEl.textContent = title;
         return fill(body,
           h('div', { class: 'list' },
-            navRow({
+            pickRow({
               label: 'Все образы', note: nOutfits(state.outfits.length),
               onclick: () => { catId = ALL; render(); }
             }),
-            ...cats.map(c => navRow({
+            ...cats.map(c => pickRow({
               label: c.name,
               note: nOutfits(inCat(c.id).length)
                 + (subsOf(c).length ? ' · ' + subsOf(c).length + ' подкат.' : ''),
               onclick: () => go(c.id)
             })),
-            loose ? navRow({
+            loose ? pickRow({
               label: 'Без категории', note: nOutfits(loose), muted: true,
               onclick: () => go(NO_CAT)
             }) : null
@@ -226,12 +226,12 @@ export function pickOutfits({ title = 'Выбрать образы', selected = 
       if (cat && subs.length && !subId) {
         return fill(body,
           h('div', { class: 'list' },
-            navRow({ label: 'Категории', back: true, onclick: () => go(null) }),
-            ...subs.map(sb => navRow({
+            pickRow({ label: 'Категории', back: true, onclick: () => go(null) }),
+            ...subs.map(sb => pickRow({
               label: sb.name, note: nOutfits(inCat(cat.id).filter(o => o.subId === sb.id).length),
               onclick: () => go(cat.id, sb.id)
             })),
-            sublessN ? navRow({
+            sublessN ? pickRow({
               label: 'Другое', note: nOutfits(sublessN), muted: true,
               onclick: () => go(cat.id, NO_SUB)
             }) : null
@@ -242,7 +242,7 @@ export function pickOutfits({ title = 'Выбрать образы', selected = 
       const list = catId === ALL ? state.outfits : listed();
       const up = subId ? () => go(cat.id) : cats.length ? () => go(null) : null;
       fill(body,
-        up ? h('div', { class: 'list' }, navRow({ label: 'Назад', back: true, onclick: up })) : null,
+        up ? h('div', { class: 'list' }, pickRow({ label: 'Назад', back: true, onclick: up })) : null,
         list.length ? h('div', { class: 'grid g2' }, list.map(tile))
           : h('div', { class: 'empty' }, 'Здесь пусто')
       );

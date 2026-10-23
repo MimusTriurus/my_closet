@@ -26,12 +26,11 @@ export async function openOutfitEditor(existing, isCopy = false) {
     : {
       id: uid('of'), name: '', bg: 'cream', layers: [], createdAt: Date.now(),
       // образ ложится в ту папку, из которой его начали собирать
-      catId: nav.catId === OTHER ? null : nav.catId, subId: nav.subId === OTHER ? null : nav.subId
+      catId: onav.catId === OTHER ? null : onav.catId, subId: onav.subId === OTHER ? null : onav.subId
     };
 
   const host = h('div', { id: 'stage-host' });
   const toolbar = h('div', { class: 'tools' });
-  const opts = h('div', { class: 'tool-opts' });
   /**
    * Подсказки живут в отдельном окне, а не на экране редактора: все сразу
    * они занимали треть высоты листа, а лист здесь — главное. Кнопка рядом
@@ -59,7 +58,7 @@ export async function openOutfitEditor(existing, isCopy = false) {
     title: !existing || isCopy ? 'Новый образ' : 'Редактировать образ',
     full: true,
     body: h('div', { style: { display: 'flex', flexDirection: 'column', height: '100%', margin: '-12px' } },
-      host, opts, toolbar),
+      host, toolbar),
     onClose: () => settle(saved),
     foot: [
       h('button', { class: 'btn', onclick: () => modal.close() }, 'Отмена'),
@@ -207,8 +206,29 @@ export async function openOutfitEditor(existing, isCopy = false) {
 
   function selected() { return tr.nodes()[0] || null; }
 
+  /**
+   * Палитра фона открывается окном, а не разворачивается в строке под
+   * листом: на телефоне лист и так упирается в высоту экрана, и постоянная
+   * полоса со свотчами отнимала у него около сотни пикселей. Фон меняют
+   * редко — ему хватает кнопки.
+   */
+  const openBg = () => {
+    const m = openModal({
+      title: 'Фон листа',
+      body: h('div', { class: 'palette-grid' }, BGS.map(b =>
+        h('button', {
+          class: 'swatch' + (outfit.bg === b.id ? ' sel' : ''),
+          style: { background: b.css, border: b.id === 'none' ? '1px dashed #bbb' : '' },
+          title: b.name,
+          onclick: () => { applyBg(b.id); m.close(); }
+        })
+      ))
+    });
+  };
+
   const TOOLS = [
     { ic: '➕', label: 'Вещи', fn: addItems },
+    { ic: '🎨', label: 'Фон', fn: openBg },
     // название на вырост: кнопка должна собирать вещи по фильтру (например,
     // все синие и красные — проверить сочетаемость). Пока за ним случайный
     // подбор, поэтому он и спрашивает, прежде чем стереть собранное
@@ -224,32 +244,14 @@ export async function openOutfitEditor(existing, isCopy = false) {
         layer.batchDraw();
       }
     },
-    { ic: '🗑', label: 'Убрать', fn: () => { const n = selected(); if (n) { n.destroy(); tr.nodes([]); layer.batchDraw(); } } }
+    { ic: '🗑', label: 'Убрать', fn: () => { const n = selected(); if (n) { n.destroy(); tr.nodes([]); layer.batchDraw(); } } },
+    { ic: '❔', label: 'Подсказки', fn: openHints }
   ];
   fill(toolbar, ...TOOLS.map(t =>
     h('button', { class: 'tool', onclick: t.fn }, h('span', { class: 'ic' }, t.ic), h('span', {}, t.label))));
 
-  // Палитра стоит на месте всегда. Раньше её показывала кнопка «Фон», но
-  // показанная однажды, она оставалась насовсем и вытесняла подсказку —
-  // кнопка после этого выглядела ничего не делающей. Места хватает обеим
-  fill(opts,
-    h('div', { class: 'row', style: { gap: '8px', marginBottom: '2px' } },
-      h('span', { class: 'section-title spacer', style: { margin: '0' } }, 'Фон листа'),
-      h('button', { class: 'btn btn-sm', onclick: openHints }, '❔ Подсказки')),
-    h('div', { class: 'palette-row' }, BGS.map(b =>
-      h('button', {
-        class: 'swatch' + (outfit.bg === b.id ? ' sel' : ''),
-        style: { background: b.css },
-        onclick: e => {
-          applyBg(b.id);
-          [...e.currentTarget.parentNode.children].forEach(x => x.classList.remove('sel'));
-          e.currentTarget.classList.add('sel');
-        }
-      })
-    )));
-
-  // пересчитываем, когда все полосы внизу уже на месте: первый расчёт шёл
-  // по пустой палитре и ошибался на её высоту
+  // пересчитываем, когда строка инструментов уже на месте: первый расчёт
+  // шёл по пустой строке и ошибался на её высоту
   viewScale = fit();
 
   let saved = null;
@@ -313,14 +315,16 @@ const outfitSpace = {
  * Устроено как «Гардероб»: список категорий → подкатегории → образы.
  * «Другое» появляется само, когда в категории есть образы без подкатегории.
  */
-export const nav = { all: false, catId: null, subId: null, outfitId: null };
+// имя своё, не общее с гардеробом: в однофайловой сборке все модули
+// живут в одной области видимости, и одинаковые имена сталкиваются
+const onav = { all: false, catId: null, subId: null, outfitId: null };
 
-const goRoot = () => { nav.all = false; nav.catId = null; nav.subId = null; nav.outfitId = null; emit(); };
-const openCat = id => { nav.catId = id; nav.subId = null; emit(); };
+const goOutfitsRoot = () => { onav.all = false; onav.catId = null; onav.subId = null; onav.outfitId = null; emit(); };
+const openOutfitCat = id => { onav.catId = id; onav.subId = null; emit(); };
 const catOf = id => outfitCats().find(c => c.id === id) || null;
 
 /** Образы раздела. Ссылка на удалённую подкатегорию считается отсутствующей. */
-function outfitsIn(catId, subId) {
+function inOutfitFolder(catId, subId) {
   const want = catId === OTHER ? null : catId;
   const subs = new Set((catOf(want)?.subs || []).map(s => s.id));
   const subOf = o => (subs.has(o.subId) ? o.subId : null);
@@ -329,30 +333,30 @@ function outfitsIn(catId, subId) {
       && (subId == null || (subId === OTHER ? !subOf(o) : subOf(o) === subId)))
     .sort((a, b) => b.createdAt - a.createdAt);
 }
-const latestOutfit = (catId, subId) => outfitsIn(catId, subId)[0] || null;
+const latestOutfit = (catId, subId) => inOutfitFolder(catId, subId)[0] || null;
 
 export function outfitsNav() {
-  if (nav.outfitId) {
-    const o = outfitById(nav.outfitId);
-    if (o) return { title: o.name || 'Образ', back: closeCard };
+  if (onav.outfitId) {
+    const o = outfitById(onav.outfitId);
+    if (o) return { title: o.name || 'Образ', back: closeOutfitCard };
   }
-  if (nav.all) return { title: 'Все образы', back: goRoot };
+  if (onav.all) return { title: 'Все образы', back: goOutfitsRoot };
   // «Другое» — не настоящая категория, своего заголовка у неё иначе не будет
-  if (nav.catId === OTHER) return { title: 'Другое', back: goRoot };
-  const cat = catOf(nav.catId);
+  if (onav.catId === OTHER) return { title: 'Другое', back: goOutfitsRoot };
+  const cat = catOf(onav.catId);
   if (!cat) return null;
-  if (!nav.subId) {
+  if (!onav.subId) {
     return {
-      title: cat.name, back: goRoot,
+      title: cat.name, back: goOutfitsRoot,
       action: { icon: '📂', title: 'Подкатегории', onclick: () => openSubManager(outfitSpace, cat, emit) }
     };
   }
-  const name = nav.subId === OTHER ? 'Другое' : cat.subs.find(s => s.id === nav.subId)?.name;
-  return { title: name || cat.name, back: () => { nav.subId = null; emit(); } };
+  const name = onav.subId === OTHER ? 'Другое' : cat.subs.find(s => s.id === onav.subId)?.name;
+  return { title: name || cat.name, back: () => { onav.subId = null; emit(); } };
 }
 
 /* ---------- карточка образа ---------- */
-const closeCard = () => { nav.outfitId = null; emit(); };
+const closeOutfitCard = () => { onav.outfitId = null; emit(); };
 
 /**
  * Называем архивные вещи по производителю — но только те, у кого он есть.
@@ -401,7 +405,7 @@ function renderOutfitCard(root, o) {
     h('div', { class: 'section-title' }, 'Вещи в образе'),
     items.length ? h('div', { class: 'grid' }, items.map(it => h('div', {
       class: 'tile' + (it.archived ? ' gone' : ''), style: { background: bgCss(it.bg) },
-      onclick: () => { closeCard(); openItemCard(it); }
+      onclick: () => { closeOutfitCard(); openItemCard(it); }
     }, h('img', { src: urlFor(it.img) }))))
       : h('p', { class: 'muted small' }, 'Вещей из гардероба в образе не осталось.'),
 
@@ -437,7 +441,7 @@ export function copyOutfit(o, drop = []) {
     createdAt: Date.now()
   };
   if (drop.length) copy.layers = copy.layers.filter(l => !drop.includes(l.itemId));
-  nav.outfitId = null;
+  onav.outfitId = null;
   return openOutfitEditor(copy, true);
 }
 
@@ -447,7 +451,7 @@ async function removeOutfit(o) {
     ? `Образ использован в ${plural(days, 'дне', 'днях', 'днях')} календаря. Удалить вместе с записями?`
     : 'Удалить образ?';
   if (!await confirmDialog(text)) return;
-  closeCard();
+  closeOutfitCard();
   await deleteOutfit(o.id);
   toast(days ? 'Образ и записи удалены' : 'Образ удалён');
 }
@@ -520,7 +524,7 @@ const outfitTile = o => {
   const gone = archivedInOutfit(o).length;
   return h('div', {
     class: 'tile' + (gone ? ' has-gone' : ''), style: { background: bgCss(o.bg) },
-    onclick: () => { nav.outfitId = o.id; emit(); }
+    onclick: () => { onav.outfitId = o.id; emit(); }
   },
     h('img', { src: urlFor(o.preview) }),
     gone ? h('span', { class: 'gone-mark', title: 'В образе есть вещь из архива' }, '◷') : null,
@@ -542,25 +546,25 @@ function outfitGrid(root, list, emptyText) {
 
 function renderOutfitRoot(root) {
   const cats = outfitCats().sort((a, b) => a.order - b.order);
-  const loose = outfitsIn(OTHER, null).length;
+  const loose = inOutfitFolder(OTHER, null).length;
 
   fill(root,
     h('div', { class: 'list' },
       navRow({
         thumbNode: collageThumb(state.outfits, o => o.preview), title: 'Все образы',
         note: nOutfits(state.outfits.length),
-        onclick: () => { nav.all = true; emit(); }
+        onclick: () => { onav.all = true; emit(); }
       }),
       ...cats.map(c => navRow({
         thumbNode: previewOf(latestOutfit(c.id, null)), title: c.name,
         note: nOutfits(countInOutfitCat(c.id))
           + (c.subs.length ? ' · ' + plural(c.subs.length, 'подкатегория', 'подкатегории', 'подкатегорий') : ''),
-        onclick: () => openCat(c.id)
+        onclick: () => openOutfitCat(c.id)
       })),
       loose ? navRow({
         thumbNode: previewOf(latestOutfit(OTHER, null)), title: 'Другое', muted: true,
         note: nOutfits(loose) + ' без категории',
-        onclick: () => openCat(OTHER)
+        onclick: () => openOutfitCat(OTHER)
       }) : null
     ),
     h('button', {
@@ -572,19 +576,19 @@ function renderOutfitRoot(root) {
   root.style.paddingBottom = '';
 }
 
-function renderCat(root, cat) {
-  const loose = outfitsIn(cat.id, OTHER).length;
+function renderOutfitCat(root, cat) {
+  const loose = inOutfitFolder(cat.id, OTHER).length;
   fill(root,
     h('div', { class: 'list' },
       ...cat.subs.map(s => navRow({
         thumbNode: previewOf(latestOutfit(cat.id, s.id)), title: s.name,
-        note: nOutfits(outfitsIn(cat.id, s.id).length),
-        onclick: () => { nav.subId = s.id; emit(); }
+        note: nOutfits(inOutfitFolder(cat.id, s.id).length),
+        onclick: () => { onav.subId = s.id; emit(); }
       })),
       loose ? navRow({
         thumbNode: previewOf(latestOutfit(cat.id, OTHER)), title: 'Другое', muted: true,
         note: nOutfits(loose) + ' без подкатегории',
-        onclick: () => { nav.subId = OTHER; emit(); }
+        onclick: () => { onav.subId = OTHER; emit(); }
       }) : null
     ),
     h('button', { class: 'fab', onclick: () => openOutfitEditor(null), title: 'Собрать образ' }, '+')
@@ -593,27 +597,27 @@ function renderCat(root, cat) {
 }
 
 export function renderOutfits(root) {
-  if (nav.outfitId) {
-    const o = outfitById(nav.outfitId);
+  if (onav.outfitId) {
+    const o = outfitById(onav.outfitId);
     if (o) return renderOutfitCard(root, o);
-    nav.outfitId = null;
+    onav.outfitId = null;
   }
-  if (nav.all) return outfitGrid(root, state.outfits, 'Образов пока нет. Нажмите «+» внизу справа.');
+  if (onav.all) return outfitGrid(root, state.outfits, 'Образов пока нет. Нажмите «+» внизу справа.');
 
-  if (nav.catId === OTHER) {
-    const loose = outfitsIn(OTHER, null);
-    if (!loose.length) { nav.catId = null; return renderOutfitRoot(root); }
+  if (onav.catId === OTHER) {
+    const loose = inOutfitFolder(OTHER, null);
+    if (!loose.length) { onav.catId = null; return renderOutfitRoot(root); }
     return outfitGrid(root, loose, 'Здесь пусто.');
   }
-  const cat = catOf(nav.catId);
-  if (!cat) { nav.catId = null; nav.subId = null; return renderOutfitRoot(root); }
+  const cat = catOf(onav.catId);
+  if (!cat) { onav.catId = null; onav.subId = null; return renderOutfitRoot(root); }
 
-  if (!nav.subId) {
+  if (!onav.subId) {
     return cat.subs.length
-      ? renderCat(root, cat)
-      : outfitGrid(root, outfitsIn(cat.id), `В категории «${cat.name}» пока пусто.`);
+      ? renderOutfitCat(root, cat)
+      : outfitGrid(root, inOutfitFolder(cat.id), `В категории «${cat.name}» пока пусто.`);
   }
-  const list = outfitsIn(cat.id, nav.subId);
-  if (nav.subId === OTHER && !list.length) { nav.subId = null; return renderCat(root, cat); }
+  const list = inOutfitFolder(cat.id, onav.subId);
+  if (onav.subId === OTHER && !list.length) { onav.subId = null; return renderOutfitCat(root, cat); }
   outfitGrid(root, list, 'Здесь пусто.');
 }

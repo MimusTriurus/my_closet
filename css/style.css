@@ -293,10 +293,11 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent-soft);bor
 .tools{display:flex;flex:none;gap:6px;overflow-x:auto;padding:8px 10px;background:var(--surface);border-top:1px solid var(--line);scrollbar-width:none}
 .tools::-webkit-scrollbar{display:none}
 .tool{
-  border:1px solid var(--line);background:var(--bg);border-radius:12px;padding:7px 10px;
-  font-size:11px;display:flex;flex-direction:column;align-items:center;gap:3px;min-width:60px;
+  border:1px solid var(--line);background:var(--bg);border-radius:12px;padding:7px 4px;
+  font-size:10px;line-height:1.15;display:flex;flex-direction:column;align-items:center;gap:3px;
+  flex:1 1 0;min-width:0;text-align:center;
 }
-.tool .ic{font-size:17px}
+.tool .ic{font-size:16px}
 .tool.active{background:var(--accent);border-color:var(--accent);color:#fff}
 .tool-opts{flex:none;padding:8px 12px;background:var(--surface);border-top:1px solid var(--line);font-size:12px}
 
@@ -322,6 +323,9 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent-soft);bor
   content:'';position:absolute;left:2px;top:8px;width:5px;height:5px;
   border-radius:50%;background:var(--accent)
 }
+/* палитра в окне: свотчи крупные, в несколько рядов — попасть пальцем */
+.palette-grid{display:flex;flex-wrap:wrap;gap:10px;padding:6px 0 2px}
+.palette-grid .swatch{width:52px;height:52px}
 .palette-row{display:flex;gap:8px;overflow-x:auto;padding:8px 0;scrollbar-width:none}
 .palette-row::-webkit-scrollbar{display:none}
 

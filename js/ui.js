@@ -24,6 +24,126 @@ export function h(tag, props = {}, ...kids) {
 
 export function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); return node; }
 
+/* ---------- перенос строк пальцем ----------
+ * Браузерное drag-and-drop на сенсорном экране не работает, а готовых
+ * библиотек у нас нет — считаем сами по событиям указателя.
+ *
+ * Тянется только ручка. Тянись вся строка — список перестал бы листаться:
+ * движение пальцем вверх принималось бы за перенос, и спасаться пришлось бы
+ * удержанием. Ручка не нужна ни для чего другого, поэтому и ждать нечего:
+ * перенос начинается сразу.
+ */
+export const dragHandle = () =>
+  h('div', { class: 'drag-h', title: 'Перетащите, чтобы переставить' });
+
+// порог: палец никогда не стоит ровно, и без него каждое касание ручки
+// считалось бы переносом
+const DRAG_MIN = 5;
+const EDGE = 44;   // ближе этого к краю окно начинает подкручиваться
+
+const scrollParent = el => {
+  for (let n = el; n; n = n.parentElement) {
+    if (n.scrollHeight > n.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(n).overflowY)) return n;
+  }
+  return null;
+};
+
+/**
+ * Делает строки `.lrow` внутри `container` переставляемыми за ручку.
+ * `onDrop(from, to)` — номера среди строк: кнопки и пояснения рядом не в счёт.
+ * Вешается один раз на контейнер и переживает любые перерисовки.
+ */
+export function dragReorder(container, onDrop) {
+  container.addEventListener('pointerdown', e => {
+    const handle = e.target.closest ? e.target.closest('.drag-h') : null;
+    if (!handle || !container.contains(handle)) return;
+    const row = handle.closest('.lrow');
+    const rows = [...container.children].filter(n => n.classList.contains('lrow'));
+    const from = rows.indexOf(row);
+    if (from < 0) return;
+
+    e.preventDefault();
+    // захват указателя: без него палец, уехавший со строки, теряется.
+    // Бывает и недоступен — тогда работаем без него
+    try { handle.setPointerCapture(e.pointerId); } catch (_) { }
+
+    // высоты меряем, а не считаем: на узком экране подпись переносится,
+    // и строки выходят разной высоты
+    const rects = rows.map(r => r.getBoundingClientRect());
+    const gap = rows.length > 1 ? Math.max(0, rects[1].top - rects[0].bottom) : 0;
+    const step = rects[from].height + gap;
+    const sc = scrollParent(container);
+    const scroll0 = sc ? sc.scrollTop : 0;
+    const y0 = e.clientY;
+    let moving = false, to = from, lastY = y0, edge = 0, raf = 0;
+
+    // строку ведём сдвигом, соседей раздвигаем тем же сдвигом: так никто
+    // не перерисовывается на каждое движение пальца
+    const place = dy => {
+      row.style.transform = 'translateY(' + dy + 'px)';
+      const mid = rects[from].top + rects[from].height / 2 + dy;
+      let next = from;
+      for (let i = 0; i < rows.length; i++) {
+        const c = rects[i].top + rects[i].height / 2;
+        if (i < from && mid < c) { next = i; break; }
+        if (i > from && mid > c) next = i;
+      }
+      to = next;
+      rows.forEach((r, i) => {
+        if (i === from) return;
+        const shift = (i > from && i <= to) ? -step : (i < from && i >= to) ? step : 0;
+        r.style.transform = shift ? 'translateY(' + shift + 'px)' : '';
+      });
+    };
+
+    // мерки сняты один раз, поэтому прокрутку окна добавляем к сдвигу сами
+    const drift = () => (sc ? sc.scrollTop - scroll0 : 0);
+
+    const tick = () => {
+      raf = 0;
+      if (!edge || !moving || !sc) return;
+      const was = sc.scrollTop;
+      sc.scrollTop += edge * 10;
+      if (sc.scrollTop !== was) place(lastY - y0 + drift());
+      raf = requestAnimationFrame(tick);
+    };
+
+    const move = ev => {
+      lastY = ev.clientY;
+      const dy = lastY - y0 + drift();
+      if (!moving) {
+        if (Math.abs(dy) < DRAG_MIN) return;
+        moving = true;
+        row.classList.add('dragging');
+        document.body.style.userSelect = 'none';
+      }
+      edge = 0;
+      if (sc) {
+        const r = sc.getBoundingClientRect();
+        if (lastY < r.top + EDGE) edge = -1;
+        else if (lastY > r.bottom - EDGE) edge = 1;
+      }
+      if (edge && !raf) raf = requestAnimationFrame(tick);
+      place(dy);
+    };
+
+    const end = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', end);
+      handle.removeEventListener('pointercancel', end);
+      if (raf) cancelAnimationFrame(raf);
+      document.body.style.userSelect = '';
+      row.classList.remove('dragging');
+      rows.forEach(r => { r.style.transform = ''; });
+      if (moving && to !== from) onDrop(from, to);
+    };
+
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
+  });
+}
+
 /* ---- blob URL кэш ---- */
 const urlCache = new WeakMap();
 export function urlFor(blob) {

@@ -1,11 +1,16 @@
 // Категории и подкатегории — общий механизм на три пространства: гардероб,
 // архив вещей и образы. У каждого свой список, свои счётчики и свои
 // миниатюры, поэтому пространство описывается объектом и передаётся сюда.
-import { fill, h, openModal, confirmDialog, promptDialog, actionSheet, alertDialog, plural } from './ui.js';
-import { saveCat, deleteCat, catsIn, countIn, moveCat, nextCatOrder } from './state.js';
+import { fill, h, openModal, confirmDialog, promptDialog, actionSheet, alertDialog, plural, dragHandle, dragReorder } from './ui.js';
+import { saveCat, deleteCat, catsIn, countIn, reorderCats, nextCatOrder } from './state.js';
 import { uid } from './db.js';
 
 const nSubs = n => plural(n, 'подкатегория', 'подкатегории', 'подкатегорий');
+
+// Подсказка стоит сверху и всегда: ручка переноса — вещь неочевидная, а окно
+// здесь настроечное, строка текста в нём никому не мешает
+const dragHint = what => h('p', { class: 'hint-top' },
+  'Потяните строку за ручку справа, чтобы переставить ' + what + '.');
 
 /**
  * Список категорий пространства: переименовать, удалить, добавить.
@@ -14,28 +19,28 @@ const nSubs = n => plural(n, 'подкатегория', 'подкатегори
  */
 export function openCategoryManager(space) {
   const body = h('div', { class: 'list' });
-  openModal({ title: space.title, body, full: true });
+  openModal({ title: space.title, body: [dragHint('категории'), body], full: true });
+
+  // перенос вешаем на контейнер один раз: render() меняет строки, но не его
+  dragReorder(body, async (from, to) => {
+    const next = space.cats();
+    next.splice(to, 0, next.splice(from, 1)[0]);
+    await reorderCats(next);
+    render();
+  });
 
   function render() {
     const list = space.cats();
     fill(body,
-      ...list.map((c, i) => h('div', { class: 'lrow' },
+      ...list.map(c => h('div', { class: 'lrow' },
         // та же миниатюра, что и в списке разделов: фотография, а не пиктограмма
         space.thumb(c),
         h('div', { class: 't' },
           h('b', {}, c.name),
           h('span', {}, `${space.n(countIn(c))} · ${nSubs(c.subs.length)}`)),
-        // порядок меняется стрелками: на телефоне перетаскивание ненадёжно,
-        // а список категорий короткий
-        h('div', { class: 'ord' },
-          h('button', {
-            class: 'btn btn-sm', disabled: i === 0,
-            onclick: async () => { if (await moveCat(list, c.id, -1)) render(); }
-          }, '↑'),
-          h('button', {
-            class: 'btn btn-sm', disabled: i === list.length - 1,
-            onclick: async () => { if (await moveCat(list, c.id, 1)) render(); }
-          }, '↓')),
+        // порядок меняется переносом за ручку; стрелки ↑↓ убраны — вчетвером
+        // с «⋯» они делали из строки панель управления
+        dragHandle(),
         h('button', {
           class: 'btn btn-sm', onclick: async () => {
             const act = await actionSheet(c.name, [
@@ -78,7 +83,15 @@ export function openCategoryManager(space) {
 /** Подкатегории одной категории. Открывается кнопкой в её заголовке. */
 export function openSubManager(space, cat, onDone) {
   const body = h('div', { class: 'list' });
-  openModal({ title: cat.name, body, onClose: onDone });
+  openModal({ title: cat.name, body: [dragHint('подкатегории'), body], onClose: onDone });
+
+  // у подкатегорий порядок до сих пор не менялся вовсе: стрелок им не
+  // досталось, а ручка досталась — механизм общий
+  dragReorder(body, async (from, to) => {
+    cat.subs.splice(to, 0, cat.subs.splice(from, 1)[0]);
+    await saveCat(cat);
+    render();
+  });
 
   function render() {
     fill(body,
@@ -88,6 +101,7 @@ export function openSubManager(space, cat, onDone) {
           h('span', {}, space.n(space.countSub(cat, s.id)))),
         // действия те же и в том же месте, что у категорий: редкое и опасное
         // живёт в «⋯», а не отдельной кнопкой рядом
+        dragHandle(),
         h('button', {
           class: 'btn btn-sm', onclick: async () => {
             const act = await actionSheet(s.name, [

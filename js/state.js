@@ -439,16 +439,11 @@ export const catById = id => state.cats.find(c => c.id === id);
  * угадывают, что для него сейчас важнее. Номера переписываются подряд,
  * чтобы порядок не зависел от того, какие значения накопились раньше.
  */
-export async function moveCat(list, id, dir) {
-  const i = list.findIndex(c => c.id === id);
-  const j = i + dir;
-  if (i < 0 || j < 0 || j >= list.length) return false;
-  const next = [...list];
-  next.splice(j, 0, next.splice(i, 1)[0]);
+/** Новый порядок целиком: список уже переставлен так, как нужно. */
+export async function reorderCats(next) {
   for (let k = 0; k < next.length; k++) next[k].order = k;
   for (const c of next) await dbPut('cats', c);
   emit();
-  return true;
 }
 
 /** Новая категория встаёт первой: только что заведённая — обычно и нужная. */

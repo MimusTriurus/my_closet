@@ -406,12 +406,8 @@ export function outfitsNav() {
   if (onav.catId === OTHER) return { title: 'Другое', back: goOutfitsRoot };
   const cat = catOf(onav.catId);
   if (!cat) return null;
-  if (!onav.subId) {
-    return {
-      title: cat.name, back: goOutfitsRoot,
-      action: { icon: '📂', title: 'Подкатегории', onclick: () => openSubManager(outfitSpace, cat, emit) }
-    };
-  }
+  // настройка подкатегорий — кнопкой под списком, как и у категорий
+  if (!onav.subId) return { title: cat.name, back: goOutfitsRoot };
   const name = onav.subId === OTHER ? 'Другое' : cat.subs.find(s => s.id === onav.subId)?.name;
   return { title: name || cat.name, back: () => { onav.subId = null; emit(); } };
 }
@@ -637,6 +633,13 @@ function renderOutfitRoot(root) {
   root.style.paddingBottom = '';
 }
 
+// см. closet.js: кнопка стоит там же, где «Категории образов» уровнем выше,
+// и нужна на обоих экранах категории — со списком подкатегорий и с сеткой
+const outfitSubMgrBtn = cat => h('button', {
+  class: 'btn block ghost', style: { marginTop: '14px' },
+  onclick: () => openSubManager(outfitSpace, cat, emit)
+}, '⚙️ Управление подкатегориями');
+
 function renderOutfitCat(root, cat) {
   const loose = inOutfitFolder(cat.id, OTHER).length;
   fill(root,
@@ -652,9 +655,10 @@ function renderOutfitCat(root, cat) {
         onclick: () => { onav.subId = OTHER; emit(); }
       }) : null
     ),
+    outfitSubMgrBtn(cat),
     h('button', { class: 'fab', onclick: () => openOutfitEditor(null), title: 'Собрать образ' }, '+')
   );
-  root.style.paddingBottom = '';
+  root.style.paddingBottom = '74px';
 }
 
 export function renderOutfits(root) {
@@ -674,9 +678,11 @@ export function renderOutfits(root) {
   if (!cat) { onav.catId = null; onav.subId = null; return renderOutfitRoot(root); }
 
   if (!onav.subId) {
-    return cat.subs.length
-      ? renderOutfitCat(root, cat)
-      : outfitGrid(root, inOutfitFolder(cat.id), `В категории «${cat.name}» пока пусто.`);
+    if (cat.subs.length) return renderOutfitCat(root, cat);
+    outfitGrid(root, inOutfitFolder(cat.id), `В категории «${cat.name}» пока пусто.`);
+    root.append(outfitSubMgrBtn(cat));
+    root.style.paddingBottom = '74px';
+    return;
   }
   const list = inOutfitFolder(cat.id, onav.subId);
   if (onav.subId === OTHER && !list.length) { onav.subId = null; return renderOutfitCat(root, cat); }

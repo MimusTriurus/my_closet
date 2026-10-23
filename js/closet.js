@@ -642,18 +642,9 @@ export function closetNav() {
   const cat = curCat(nav.catId);
   if (!cat) return null;
   const up = nav.archive ? goArchive : goRoot;
-  // Подкатегории настраиваются изнутри своей категории — и у гардероба,
-  // и у архива. Исключение «Сортировка»: это временная стопка, её разбирают,
-  // а не обустраивают. Названия рабочих полок не меняются, как и у архива
-  if (!nav.subId) {
-    return {
-      title: cat.name, back: up,
-      action: cat.system === 'sorting' ? null : {
-        icon: '📂', title: 'Подкатегории',
-        onclick: () => openSubManager(space(nav.archive), cat, emit)
-      }
-    };
-  }
+  // Настройка подкатегорий живёт кнопкой под списком, как и у категорий,
+  // а не значком в верхней панели: значок приходилось угадывать
+  if (!nav.subId) return { title: cat.name, back: up };
   const name = nav.subId === OTHER ? 'Другое' : subById(cat.id, nav.subId)?.name;
   return { title: name || cat.name, back: () => { nav.subId = null; emit(); } };
 }
@@ -923,6 +914,24 @@ function renderArchiveRoot(root) {
 }
 
 /** Второй уровень: подкатегории. «Другое» появляется само, когда есть что показать. */
+/**
+ * Кнопка настройки подкатегорий. Стоит там же, где «Управление категориями»
+ * уровнем выше: набор действий у них одинаковый, и искать их надо в одном
+ * месте. Раньше это был значок 📂 в верхней панели — угадать его было
+ * нечем.
+ *
+ * Нужна на обоих экранах категории: со списком подкатегорий и — когда их
+ * ещё нет — с сеткой вещей. На втором она и важнее: оттуда подкатегории
+ * заводят впервые.
+ *
+ * Исключение «Сортировка»: это временная стопка, её разбирают, а не
+ * обустраивают.
+ */
+const subMgrBtn = cat => cat.system === 'sorting' ? null : h('button', {
+  class: 'btn block ghost', style: { marginTop: '14px' },
+  onclick: () => openSubManager(space(nav.archive), cat, emit)
+}, '⚙️ Управление подкатегориями');
+
 function renderCat(root, cat) {
   const loose = itemsIn(cat.id, OTHER).length;
 
@@ -940,9 +949,11 @@ function renderCat(root, cat) {
         onclick: () => openSub(OTHER)
       }) : null
     ),
+    subMgrBtn(cat),
     nav.archive ? null : h('button', { class: 'fab', onclick: startAddItem, title: 'Добавить вещь' }, '+')
   );
-  root.style.paddingBottom = '';
+  // запас, чтобы кнопка не оказалась под круглой
+  root.style.paddingBottom = nav.archive ? '' : '74px';
 }
 
 const itemTile = (it, selectable = false) => {
@@ -1098,11 +1109,18 @@ export function renderCloset(root) {
 
   // подкатегории показываем только там, где они есть
   if (!nav.subId) {
-    return cat.subs.length
-      ? renderCat(root, cat)
-      : renderItems(root, itemsIn(cat.id), nav.archive
-        ? `В разделе «${cat.name}» пока пусто.`
-        : `В разделе «${cat.name}» пока пусто. Нажмите «+» внизу справа.`);
+    if (cat.subs.length) return renderCat(root, cat);
+    renderItems(root, itemsIn(cat.id), nav.archive
+      ? `В разделе «${cat.name}» пока пусто.`
+      : `В разделе «${cat.name}» пока пусто. Нажмите «+» внизу справа.`);
+    // сетка вещей вместо списка подкатегорий — но завести их нужно именно
+    // отсюда, поэтому кнопку дописываем к готовому экрану
+    const btn = subMgrBtn(cat);
+    if (btn) {
+      root.append(btn);
+      root.style.paddingBottom = nav.archive ? '' : '74px';
+    }
+    return;
   }
   const list = itemsIn(cat.id, nav.subId);
   if (nav.subId === OTHER && !list.length) { nav.subId = null; return renderCat(root, cat); }

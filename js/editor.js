@@ -183,9 +183,30 @@ export async function openImageEditor(source) {
   const stepZoom = k => zoomAt(zoom * k, ...wrapCenter());
   const resetView = () => { zoom = 1; panX = panY = 0; applyView(); };
 
-  // Отдельной строкой над снимком. Поверх снимка эти кнопки закрывали угол —
-  // ровно тот, к которому при увеличении и подбираются.
+  /* Отдельной строкой над снимком. Поверх снимка эти кнопки закрывали угол —
+   * ровно тот, к которому при увеличении и подбираются.
+   *
+   * Рука и «Отменить» стоят здесь же, а не среди инструментов: сдвигать
+   * нужно ровно тогда, когда приблизили, — это одна работа. А «Отменить»
+   * и вовсе не инструмент: оно не выбирается, а срабатывает. Инструментам
+   * заодно хватило одной строки, и подписи перестали обрезаться.
+   */
+  const undoBtn = h('button', {
+    class: 'zb', title: 'Отменить последнее действие', onclick: () => undo()
+  }, '⟲');
+  const panBtn = h('button', {
+    class: 'zb hand', title: 'Сдвинуть снимок',
+    onclick: () => {
+      tool = tool === 'pan' ? 'wand' : 'pan';
+      cropRect = null; picking = false;
+      renderToolbar(); renderOpts(); render();
+    }
+  }, '✋ Сдвинуть');
+
   const zoomBar = h('div', { class: 'zoom-bar' },
+    undoBtn,
+    panBtn,
+    h('span', { class: 'spacer' }),
     h('button', { class: 'zb', title: 'Отдалить', onclick: () => stepZoom(1 / 1.6) }, '−'),
     zoomLbl,
     h('button', { class: 'zb', title: 'Приблизить', onclick: () => stepZoom(1.6) }, '+'),
@@ -208,17 +229,16 @@ export async function openImageEditor(source) {
      толку рядом с «Отменить», у которого смысл совсем другой. */
   const TOOLS = [
     { id: 'ai', ic: '✨', label: 'ИИ-фон', action: runAI },
-    { id: 'pan', ic: '✋', label: 'Сдвинуть' },
     { id: 'wand', ic: '🪄', label: 'Палочка' },
     { id: 'erase', ic: '🧽', label: 'Ластик' },
     { id: 'restore', ic: '↩️', label: 'Вернуть' },
     { id: 'paint', ic: '🖌', label: 'Кисть' },
     { id: 'crop', ic: '⬛', label: 'Кроп' },
-    { id: 'lasso', ic: '✂️', label: 'Лассо' },
-    { id: 'undo', ic: '⟲', label: 'Отменить', action: undo }
+    { id: 'lasso', ic: '✂️', label: 'Лассо' }
   ];
 
   function renderToolbar() {
+    panBtn.classList.toggle('on', tool === 'pan');
     fill(toolbar, ...TOOLS.map(t =>
       h('button', {
         class: 'tool' + (tool === t.id ? ' active' : ''),
@@ -263,7 +283,7 @@ export async function openImageEditor(source) {
         brushSlider());
     } else if (tool === 'pan') {
       opts.append(h('div', { class: 'muted small' },
-        'Тяните снимок пальцем. Чтобы вернуться к правке, нажмите нужный инструмент.'));
+        'Тяните снимок пальцем. Чтобы вернуться к правке, нажмите нужный инструмент или ещё раз «Сдвинуть».'));
     } else if (tool === 'crop') {
       opts.append(h('div', { class: 'row' },
         h('span', { class: 'muted small spacer' },
@@ -285,9 +305,7 @@ export async function openImageEditor(source) {
   });
 
   function updateChrome() {
-    const u = TOOLS.find(t => t.id === 'undo');
-    const btn = [...toolbar.children][TOOLS.indexOf(u)];
-    if (btn) btn.disabled = history.length === 0;
+    undoBtn.disabled = history.length === 0;
   }
 
   /* ---------- отрисовка ---------- */

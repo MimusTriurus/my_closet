@@ -361,16 +361,27 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent-soft);bor
   width:28px;height:28px;border:0;background:transparent;border-radius:8px;
   font-size:15px;line-height:1;color:var(--ink);cursor:pointer
 }
-.zoom-bar .zb.wide{width:34px;font-size:11px}
+.zoom-bar .zb.wide{width:auto;padding:0 8px;font-size:11px}
 .zoom-bar .zb:active{background:var(--surface-2)}
-/* Инструменты переносятся на вторую строку, а не уезжают за правый край:
-   уехавшее за край не находят, и инструмент всё равно что отсутствует */
-.tools{display:flex;flex-wrap:wrap;flex:none;gap:6px;padding:8px 10px;background:var(--surface);border-top:1px solid var(--line)}
-.tool{
-  border:1px solid var(--line);background:var(--bg);border-radius:12px;padding:7px 4px;
-  font-size:10px;line-height:1.15;display:flex;flex-direction:column;align-items:center;gap:3px;
-  flex:0 0 calc(20% - 4.8px);text-align:center;
+.zoom-bar .zb:disabled{opacity:.35}
+/* рука — здесь же, а не среди инструментов: сдвигают ровно тогда,
+   когда приблизили, и это одна работа */
+.zoom-bar .zb.hand{
+  width:auto;padding:0 9px;font-size:11px;border:1px solid var(--line);
+  background:var(--bg);white-space:nowrap
 }
+.zoom-bar .zb.hand.on{background:var(--accent);border-color:var(--accent);color:#fff}
+/* Все инструменты в одном ряду и целиком на виду: то, что уехало за край
+   или на вторую строку, находят хуже, а инструментов здесь немного */
+.tools{display:flex;flex:none;gap:4px;padding:8px 8px;background:var(--surface);border-top:1px solid var(--line)}
+.tool{
+  border:1px solid var(--line);background:var(--bg);border-radius:12px;padding:7px 1px;
+  font-size:10px;line-height:1.15;display:flex;flex-direction:column;align-items:center;gap:3px;
+  flex:1 1 0;min-width:0;text-align:center;
+}
+/* подпись не переносится и не растягивает кнопку: лучше узкая строка,
+   чем ряд кнопок разной высоты */
+.tool>span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .tool .ic{font-size:16px}
 .tool.active{background:var(--accent);border-color:var(--accent);color:#fff}
 .tool-opts{flex:none;padding:8px 12px;background:var(--surface);border-top:1px solid var(--line);font-size:12px}
@@ -826,13 +837,17 @@ function openModal({ title, body, foot, full = false, onClose, closeText = '✕'
   return { close, root: modal, body: bodyEl };
 }
 
-function confirmDialog(text, okText = 'Удалить') {
+/**
+ * `warn` — когда соглашаются на потерю: строка становится красной, как и
+ * остальные предупреждения о том, чего не вернуть.
+ */
+function confirmDialog(text, okText = 'Удалить', warn = false) {
   return new Promise(res => {
     let answered = false;
     const answer = v => { answered = true; res(v); m.close(); };
     const m = openModal({
       title: 'Подтверждение',
-      body: h('p', { style: { margin: '4px 0 8px' } }, text),
+      body: h('p', { class: warn ? 'warn-line' : '', style: { margin: '4px 0 8px' } }, text),
       foot: [
         h('button', { class: 'btn', onclick: () => answer(false) }, 'Отмена'),
         h('button', { class: 'btn primary', onclick: () => answer(true) }, okText)
@@ -2086,9 +2101,30 @@ async function openImageEditor(source) {
   const stepZoom = k => zoomAt(zoom * k, ...wrapCenter());
   const resetView = () => { zoom = 1; panX = panY = 0; applyView(); };
 
-  // Отдельной строкой над снимком. Поверх снимка эти кнопки закрывали угол —
-  // ровно тот, к которому при увеличении и подбираются.
+  /* Отдельной строкой над снимком. Поверх снимка эти кнопки закрывали угол —
+   * ровно тот, к которому при увеличении и подбираются.
+   *
+   * Рука и «Отменить» стоят здесь же, а не среди инструментов: сдвигать
+   * нужно ровно тогда, когда приблизили, — это одна работа. А «Отменить»
+   * и вовсе не инструмент: оно не выбирается, а срабатывает. Инструментам
+   * заодно хватило одной строки, и подписи перестали обрезаться.
+   */
+  const undoBtn = h('button', {
+    class: 'zb', title: 'Отменить последнее действие', onclick: () => undo()
+  }, '⟲');
+  const panBtn = h('button', {
+    class: 'zb hand', title: 'Сдвинуть снимок',
+    onclick: () => {
+      tool = tool === 'pan' ? 'wand' : 'pan';
+      cropRect = null; picking = false;
+      renderToolbar(); renderOpts(); render();
+    }
+  }, '✋ Сдвинуть');
+
   const zoomBar = h('div', { class: 'zoom-bar' },
+    undoBtn,
+    panBtn,
+    h('span', { class: 'spacer' }),
     h('button', { class: 'zb', title: 'Отдалить', onclick: () => stepZoom(1 / 1.6) }, '−'),
     zoomLbl,
     h('button', { class: 'zb', title: 'Приблизить', onclick: () => stepZoom(1.6) }, '+'),
@@ -2111,17 +2147,16 @@ async function openImageEditor(source) {
      толку рядом с «Отменить», у которого смысл совсем другой. */
   const TOOLS = [
     { id: 'ai', ic: '✨', label: 'ИИ-фон', action: runAI },
-    { id: 'pan', ic: '✋', label: 'Сдвинуть' },
     { id: 'wand', ic: '🪄', label: 'Палочка' },
     { id: 'erase', ic: '🧽', label: 'Ластик' },
     { id: 'restore', ic: '↩️', label: 'Вернуть' },
     { id: 'paint', ic: '🖌', label: 'Кисть' },
     { id: 'crop', ic: '⬛', label: 'Кроп' },
-    { id: 'lasso', ic: '✂️', label: 'Лассо' },
-    { id: 'undo', ic: '⟲', label: 'Отменить', action: undo }
+    { id: 'lasso', ic: '✂️', label: 'Лассо' }
   ];
 
   function renderToolbar() {
+    panBtn.classList.toggle('on', tool === 'pan');
     fill(toolbar, ...TOOLS.map(t =>
       h('button', {
         class: 'tool' + (tool === t.id ? ' active' : ''),
@@ -2166,7 +2201,7 @@ async function openImageEditor(source) {
         brushSlider());
     } else if (tool === 'pan') {
       opts.append(h('div', { class: 'muted small' },
-        'Тяните снимок пальцем. Чтобы вернуться к правке, нажмите нужный инструмент.'));
+        'Тяните снимок пальцем. Чтобы вернуться к правке, нажмите нужный инструмент или ещё раз «Сдвинуть».'));
     } else if (tool === 'crop') {
       opts.append(h('div', { class: 'row' },
         h('span', { class: 'muted small spacer' },
@@ -2188,9 +2223,7 @@ async function openImageEditor(source) {
   });
 
   function updateChrome() {
-    const u = TOOLS.find(t => t.id === 'undo');
-    const btn = [...toolbar.children][TOOLS.indexOf(u)];
-    if (btn) btn.disabled = history.length === 0;
+    undoBtn.disabled = history.length === 0;
   }
 
   /* ---------- отрисовка ---------- */
@@ -3309,6 +3342,13 @@ function openItemForm(item, isNew = false) {
     }
 
     async function replacePhoto() {
+      /* Правку текущего снимка предупреждать незачем: отказаться можно,
+         выйдя из редактора без «Готово», и прежний снимок останется. А вот
+         замена подменяет исходник — после «Готово» прежнего нет нигде. */
+      if (!isNew && !await confirmDialog(
+        'Прежний снимок будет заменён новым, и вернуть его будет нельзя. ' +
+        'Пока вы не нажали «Готово» в редакторе, ничего не меняется.',
+        'Заменить', true)) return;
       const act = await actionSheet('Заменить снимок', [
         // «фото» в нашем словаре означает камеру, поэтому называть её
         // отдельно незачем — и «новое» не нужно: что это замена, сказано

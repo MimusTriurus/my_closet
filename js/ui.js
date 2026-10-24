@@ -216,13 +216,17 @@ export function openModal({ title, body, foot, full = false, onClose, closeText 
   return { close, root: modal, body: bodyEl };
 }
 
-export function confirmDialog(text, okText = 'Удалить') {
+/**
+ * `warn` — когда соглашаются на потерю: строка становится красной, как и
+ * остальные предупреждения о том, чего не вернуть.
+ */
+export function confirmDialog(text, okText = 'Удалить', warn = false) {
   return new Promise(res => {
     let answered = false;
     const answer = v => { answered = true; res(v); m.close(); };
     const m = openModal({
       title: 'Подтверждение',
-      body: h('p', { style: { margin: '4px 0 8px' } }, text),
+      body: h('p', { class: warn ? 'warn-line' : '', style: { margin: '4px 0 8px' } }, text),
       foot: [
         h('button', { class: 'btn', onclick: () => answer(false) }, 'Отмена'),
         h('button', { class: 'btn primary', onclick: () => answer(true) }, okText)

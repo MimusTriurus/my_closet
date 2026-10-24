@@ -26,7 +26,10 @@ export const filters = (arc = nav.archive) => FILTERS[arc ? 'archive' : 'closet'
 
 /* ---------- добавление вещи ---------- */
 export async function addItemFlow(sourceBlob, preset = {}) {
-  const blob = await openImageEditor(sourceBlob, { autoAI: preset.autoAI !== false });
+  // Редактор открывается и ждёт: удалять фон, обрезать или оставить как есть —
+  // решает человек. Раньше ИИ срабатывал сам, и снимок менялся до того, как на
+  // него успевали посмотреть.
+  const blob = await openImageEditor(sourceBlob);
   if (!blob) return null;
   busy(true, 'Анализирую цвета…');
   let colors = [];
@@ -266,13 +269,14 @@ export function openItemForm(item, isNew = false) {
       lining: (item.material?.lining || []).map(p => ({ ...p }))
     };
     let brandId = item.brandId || null;
+    let bg = item.bg;
     const colorIds = [...(item.colorIds || [])];
     // подсказка для новых цветов палитры — оттенки, снятые с этой фотографии
     const suggest = (item.colors || []).map(c => c.hex);
 
     const subSel = h('select', {});
     const catSel = h('select', {
-      onchange: () => { item.catId = catSel.value; fillSubs(); }
+      onchange: fillSubs
     }, closetCats().map(c => h('option', { value: c.id, selected: c.id === item.catId }, c.name)));
 
     function fillSubs() {
@@ -284,29 +288,36 @@ export function openItemForm(item, isNew = false) {
     }
     fillSubs();
 
-    // Фотография правится отдельно от полей, но применяется вместе с ними:
-    // пока форма открыта, «Отмена» обязана вернуть прежний снимок.
+    /* Фотография — единственное, что сохраняется, не дожидаясь «Сохранить».
+     * Правка снимка идёт в отдельном окне с собственным «Готово», и требовать
+     * после него второго подтверждения — значит терять работу тех, кто решил,
+     * что уже сохранил. Отказаться от правок можно там же: выйти из редактора,
+     * не нажимая «Готово». У новой вещи сохранять ещё некуда — её снимок
+     * закрепляется общей кнопкой вместе с полями. */
     let img = item.img;
     let colors = item.colors || [];
 
     // снимок не нажимается: под ним стоят подписанные кнопки, а нажатие без
     // опознавательных знаков — та же скрытая функция, от которой мы уходим
     const preview = h('div', {
-      class: 'tile', style: { aspectRatio: '1', maxWidth: '190px', margin: '0 auto 10px', background: bgCss(item.bg) }
+      class: 'tile', style: { aspectRatio: '1', maxWidth: '190px', margin: '0 auto 10px', background: bgCss(bg) }
     }, h('img', { src: urlFor(img) }));
 
     async function applyPhoto(blob) {
       img = blob;
       preview.querySelector('img').src = urlFor(blob);
-      // строка молчит до тех пор, пока терять нечего: предупреждать заранее
-      // значит показывать её тем, кто ещё передумает, — а к частому
-      // предупреждению привыкают и перестают читать
-      warnEl.hidden = isNew;
       try {
         colors = extractPalette(await imageFromBlob(blob), 5);
         // подсказки для новых цветов палитры берём уже с нового снимка
         suggest.splice(0, suggest.length, ...colors.map(c => c.hex));
       } catch (e) { console.warn(e); }
+      if (isNew) return;
+      // сохраняем только снимок: остальные поля формы пока не трогаем — их
+      // ещё могут отменить
+      item.img = img;
+      item.colors = colors;
+      await saveItem(item);
+      toast('Снимок сохранён');
     }
 
     /**
@@ -315,7 +326,7 @@ export function openItemForm(item, isNew = false) {
      * в списке частое действие стоит лишнего нажатия каждый раз.
      */
     async function editCurrent() {
-      const blob = await openImageEditor(img, { autoAI: false });
+      const blob = await openImageEditor(img);
       if (blob) await applyPhoto(blob);
     }
 
@@ -330,17 +341,11 @@ export function openItemForm(item, isNew = false) {
       if (!act) return;
       const src = act === 'cam' ? await captureFromCamera() : await pickImageFile();
       if (!src) return;
-      // новый снимок проходит тот же путь, что и при добавлении вещи:
-      // та же обрезка и то же удаление фона
-      const blob = await openImageEditor(src, { autoAI: true });
+      // новый снимок проходит тот же путь, что и при добавлении вещи
+      const blob = await openImageEditor(src);
       if (blob) await applyPhoto(blob);
     }
 
-    // прежний снимок нигде не сохраняется, поэтому «Сохранить» здесь —
-    // точка невозврата. Про «Отмену» говорим прямо: сама по себе она
-    // не выглядит спасением
-    const warnEl = h('p', { class: 'warn-line', hidden: true, style: { margin: '-6px 0 14px' } },
-      'Прежний снимок будет заменён. Отмена вернёт его.');
 
     const photoBtns = h('div', { class: 'photo-btns' },
       h('button', { class: 'btn block', onclick: editCurrent }, '✎ Редактировать текущий снимок'),
@@ -351,11 +356,11 @@ export function openItemForm(item, isNew = false) {
 
     const bgRow = h('div', { class: 'palette-row' }, BGS.map(b =>
       h('button', {
-        class: 'swatch' + (item.bg === b.id ? ' sel' : ''),
+        class: 'swatch' + (bg === b.id ? ' sel' : ''),
         style: { background: b.css, border: b.id === 'none' ? '1px dashed #bbb' : '' },
         title: b.name,
         onclick: e => {
-          item.bg = b.id;
+          bg = b.id;
           preview.style.background = b.css;
           [...bgRow.children].forEach(x => x.classList.remove('sel'));
           e.currentTarget.classList.add('sel');
@@ -375,7 +380,7 @@ export function openItemForm(item, isNew = false) {
     const modal = openModal({
       title: isNew ? 'Новая вещь' : 'Редактировать',
       body: h('div', {},
-        preview, photoBtns, warnEl,
+        preview, photoBtns,
         h('div', { class: 'section-title' }, 'Фон карточки'), bgRow,
         h('label', { class: 'field' }, h('span', {}, 'Категория'), catSel),
         h('label', { class: 'field' }, h('span', {}, 'Подкатегория'), subSel),
@@ -393,6 +398,7 @@ export function openItemForm(item, isNew = false) {
           class: 'btn primary', onclick: async () => {
             item.catId = catSel.value || null;
             item.subId = subSel.value || null;
+            item.bg = bg;
             // значение списка могли удалить, пока форма была открыта
             const alive = (key, id) => (listEntry(key, id) ? id : null);
             item.brandId = alive('brands', brandId);

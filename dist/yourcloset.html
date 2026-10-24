@@ -349,12 +349,12 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent-soft);bor
   position:relative;touch-action:none;
 }
 #ed-canvas{max-width:100%;max-height:100%;touch-action:none;cursor:crosshair;transform-origin:center center}
-/* масштаб — поверх снимка: в строке инструментов для него нет места,
-   а нужен он одновременно с ними */
+/* масштаб — отдельной строкой над снимком. Поверх снимка эти кнопки
+   закрывали угол, а при увеличении правят как раз по углам */
 .zoom-bar{
-  position:absolute;top:8px;right:8px;display:flex;align-items:center;gap:2px;
-  background:rgba(255,255,255,.92);border:1px solid var(--line);border-radius:10px;
-  padding:2px;box-shadow:0 1px 4px rgba(0,0,0,.12);font-size:12px
+  flex:none;display:flex;align-items:center;justify-content:center;gap:4px;
+  padding:5px 10px;background:var(--surface);border-bottom:1px solid var(--line);
+  font-size:12px
 }
 .zoom-bar b{min-width:40px;text-align:center;color:var(--muted);font-weight:600}
 .zoom-bar .zb{
@@ -363,16 +363,22 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent-soft);bor
 }
 .zoom-bar .zb.wide{width:34px;font-size:11px}
 .zoom-bar .zb:active{background:var(--surface-2)}
-.tools{display:flex;flex:none;gap:6px;overflow-x:auto;padding:8px 10px;background:var(--surface);border-top:1px solid var(--line);scrollbar-width:none}
-.tools::-webkit-scrollbar{display:none}
+/* Инструменты переносятся на вторую строку, а не уезжают за правый край:
+   уехавшее за край не находят, и инструмент всё равно что отсутствует */
+.tools{display:flex;flex-wrap:wrap;flex:none;gap:6px;padding:8px 10px;background:var(--surface);border-top:1px solid var(--line)}
 .tool{
   border:1px solid var(--line);background:var(--bg);border-radius:12px;padding:7px 4px;
   font-size:10px;line-height:1.15;display:flex;flex-direction:column;align-items:center;gap:3px;
-  flex:1 1 0;min-width:0;text-align:center;
+  flex:0 0 calc(20% - 4.8px);text-align:center;
 }
 .tool .ic{font-size:16px}
 .tool.active{background:var(--accent);border-color:var(--accent);color:#fff}
 .tool-opts{flex:none;padding:8px 12px;background:var(--surface);border-top:1px solid var(--line);font-size:12px}
+/* выбор цвета кисти: системная палитра — она же привычная и на телефоне */
+.paint-col{
+  flex:0 0 auto;width:44px;height:30px;padding:2px;border:1px solid var(--line);
+  border-radius:8px;background:var(--bg);cursor:pointer
+}
 
 /* ---------- outfit editor ---------- */
 /* Лист прижат к верху: место под ним пойдёт под инструменты, а сверху оно
@@ -1895,10 +1901,13 @@ function pickHue(entry) {
 const entryName = (key, id) => listEntry(key, id)?.name || '';
 
 /* ===== editor.js ===== */
-// Редактор изображения вещи: ML-удаление фона + ручные инструменты (волшебная палочка,
-// ластик, восстановление, прямоугольный и свободный кроп).
-// Снимок можно увеличить — щипком, колесом или кнопками; это нужно ластику,
-// которым убирают мелочь вроде вешалки или травинки под подолом.
+// Редактор изображения вещи: ручные инструменты (волшебная палочка, ластик,
+// восстановление, кисть, прямоугольный и свободный кроп) плюс ИИ-удаление фона.
+// Все инструменты — по нажатию: приложение ничего не делает со снимком само.
+// Снимок можно приблизить и отдалить — щипком, колесом или кнопками; приближение
+// нужно ластику, которым убирают мелочь вроде вешалки или травинки под подолом,
+// отдаление — лассо, которому нужен весь силуэт целиком.
+
 
 
 const IMGLY_URL = 'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.8/+esm';
@@ -1996,11 +2005,10 @@ function trimTransparent(src) {
 }
 
 /**
- * Открывает редактор. Возвращает Promise<Blob|null> — PNG с прозрачным фоном.
+ * Открывает редактор. Возвращает Promise<Blob|null> — снимок с прозрачным фоном.
  * @param {Blob|string} source исходное изображение
- * @param {boolean} autoAI сразу запустить ML-удаление фона
  */
-async function openImageEditor(source, { autoAI = false } = {}) {
+async function openImageEditor(source) {
   const img = await imageFromBlob(source);
 
   // рабочий холст (ограничиваем размер — иначе тормозит на телефоне)
@@ -2039,7 +2047,9 @@ async function openImageEditor(source, { autoAI = false } = {}) {
    * toWork() считает по видимому прямоугольнику холста, а тот уже учитывает
    * любое преобразование.
    */
-  const ZOOM_MIN = 1, ZOOM_MAX = 8;
+  // Нижняя граница ниже единицы: при единице снимок вписан в окно впритык,
+  // и обводить лассо приходится по самому краю, куда палец уже не ставится.
+  const ZOOM_MIN = 0.35, ZOOM_MAX = 8;
   let zoom = 1, panX = 0, panY = 0;
   const zoomLbl = h('b', {}, '100%');
 
@@ -2076,31 +2086,39 @@ async function openImageEditor(source, { autoAI = false } = {}) {
   const stepZoom = k => zoomAt(zoom * k, ...wrapCenter());
   const resetView = () => { zoom = 1; panX = panY = 0; applyView(); };
 
-  // кнопки поверх холста: на телефоне есть щипок, но на нём свет клином не
-  // сошёлся — мышью и одним пальцем тоже надо уметь
+  // Отдельной строкой над снимком. Поверх снимка эти кнопки закрывали угол —
+  // ровно тот, к которому при увеличении и подбираются.
   const zoomBar = h('div', { class: 'zoom-bar' },
-    h('button', { class: 'zb', title: 'Мельче', onclick: () => stepZoom(1 / 1.6) }, '−'),
+    h('button', { class: 'zb', title: 'Отдалить', onclick: () => stepZoom(1 / 1.6) }, '−'),
     zoomLbl,
-    h('button', { class: 'zb', title: 'Крупнее', onclick: () => stepZoom(1.6) }, '+'),
-    h('button', { class: 'zb wide', title: 'Вписать целиком', onclick: resetView }, '1:1')
+    h('button', { class: 'zb', title: 'Приблизить', onclick: () => stepZoom(1.6) }, '+'),
+    h('button', { class: 'zb wide', title: 'Показать целиком', onclick: resetView }, 'Вписать')
   );
 
-  const wrap = h('div', { id: 'ed-wrap' }, canvas, zoomBar);
+  const wrap = h('div', { id: 'ed-wrap' }, canvas);
   const opts = h('div', { class: 'tool-opts' });
   const toolbar = h('div', { class: 'tools' });
 
   let tool = 'wand';
   let tolerance = 0.18, brush = 34;
+  let paintColor = '#c1785c', picking = false;
 
+  /** Инструменты, которые красят мазком: у них общий размер кисти и кружок под пальцем. */
+  const isBrush = () => tool === 'erase' || tool === 'restore' || tool === 'paint';
+
+  /* «Сброса» здесь нет: выйти из редактора, не нажав «Готово», — и есть отказ
+     от всех правок. Отдельная кнопка с тем же смыслом только сбивала бы с
+     толку рядом с «Отменить», у которого смысл совсем другой. */
   const TOOLS = [
     { id: 'ai', ic: '✨', label: 'ИИ-фон', action: runAI },
+    { id: 'pan', ic: '✋', label: 'Сдвинуть' },
     { id: 'wand', ic: '🪄', label: 'Палочка' },
     { id: 'erase', ic: '🧽', label: 'Ластик' },
     { id: 'restore', ic: '↩️', label: 'Вернуть' },
+    { id: 'paint', ic: '🖌', label: 'Кисть' },
     { id: 'crop', ic: '⬛', label: 'Кроп' },
     { id: 'lasso', ic: '✂️', label: 'Лассо' },
-    { id: 'undo', ic: '⟲', label: 'Отменить', action: undo },
-    { id: 'reset', ic: '⟳', label: 'Сброс', action: reset }
+    { id: 'undo', ic: '⟲', label: 'Отменить', action: undo }
   ];
 
   function renderToolbar() {
@@ -2109,11 +2127,20 @@ async function openImageEditor(source, { autoAI = false } = {}) {
         class: 'tool' + (tool === t.id ? ' active' : ''),
         onclick: () => {
           if (t.action) { t.action(); return; }
-          tool = t.id; cropRect = null; renderToolbar(); renderOpts(); render();
+          tool = t.id; cropRect = null; picking = false;
+          renderToolbar(); renderOpts(); render();
         }
       }, h('span', { class: 'ic' }, t.ic), h('span', {}, t.label))
     ));
   }
+
+  const brushSlider = () => {
+    const lbl = h('div', { class: 'muted small' }, `Кисть: ${brush} px`);
+    return h('div', {}, lbl, h('input', {
+      type: 'range', min: 2, max: 140, value: brush,
+      oninput: e => { brush = +e.target.value; lbl.textContent = `Кисть: ${brush} px`; }
+    }));
+  };
 
   function renderOpts() {
     opts.replaceChildren();
@@ -2122,11 +2149,28 @@ async function openImageEditor(source, { autoAI = false } = {}) {
       const lbl = h('div', { class: 'muted small' }, `Чувствительность: ${Math.round(tolerance * 100)}%`);
       opts.append(lbl, r, h('div', { class: 'muted small' }, 'Нажмите на фон — область удалится.'));
     } else if (tool === 'erase' || tool === 'restore') {
-      const lbl = h('div', { class: 'muted small' }, `Кисть: ${brush} px`);
-      opts.append(lbl, h('input', { type: 'range', min: 2, max: 140, value: brush, oninput: e => { brush = +e.target.value; lbl.textContent = `Кисть: ${brush} px`; } }));
+      opts.append(brushSlider());
+    } else if (tool === 'paint') {
+      opts.append(
+        h('div', { class: 'row' },
+          h('input', {
+            type: 'color', class: 'paint-col', value: paintColor,
+            oninput: e => { paintColor = e.target.value; render(); }
+          }),
+          h('button', {
+            class: 'btn btn-sm' + (picking ? ' primary' : ''),
+            onclick: () => { picking = !picking; renderOpts(); }
+          }, '💧 Пипетка'),
+          h('span', { class: 'muted small spacer' },
+            picking ? 'Нажмите на нужный цвет на снимке' : '')),
+        brushSlider());
+    } else if (tool === 'pan') {
+      opts.append(h('div', { class: 'muted small' },
+        'Тяните снимок пальцем. Чтобы вернуться к правке, нажмите нужный инструмент.'));
     } else if (tool === 'crop') {
       opts.append(h('div', { class: 'row' },
-        h('span', { class: 'muted small spacer' }, 'Выделите прямоугольник'),
+        h('span', { class: 'muted small spacer' },
+          cropRect ? 'Тяните за края или за середину' : 'Выделите прямоугольник'),
         h('button', { class: 'btn btn-sm primary', onclick: applyCrop }, 'Применить')));
     } else if (tool === 'lasso') {
       opts.append(h('div', { class: 'muted small' }, 'Обведите вещь пальцем — всё снаружи удалится.'));
@@ -2138,7 +2182,7 @@ async function openImageEditor(source, { autoAI = false } = {}) {
   const modal = openModal({
     title: 'Обработка снимка',
     full: true,
-    body: h('div', { style: { display: 'flex', flexDirection: 'column', height: '100%', margin: '-12px' } }, wrap, opts, toolbar),
+    body: h('div', { style: { display: 'flex', flexDirection: 'column', height: '100%', margin: '-12px' } }, zoomBar, wrap, opts, toolbar),
     foot: [h('button', { class: 'btn', onclick: () => { modal.close(); } }, 'Отмена'), doneBtn],
     onClose: () => resolveFn && resolveFn(null)
   });
@@ -2151,11 +2195,19 @@ async function openImageEditor(source, { autoAI = false } = {}) {
 
   /* ---------- отрисовка ---------- */
   let cropRect = null, lassoPts = null, hoverPt = null;
+  let cropDrag = null, panDrag = null;
+
+  /** Сколько пикселей снимка приходится на одну точку экрана. */
+  const perScreen = () => {
+    const r = canvas.getBoundingClientRect();
+    return r.width ? canvas.width / r.width : 1;
+  };
   function render() {
     canvas.width = work.width; canvas.height = work.height;
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(work, 0, 0);
+    const k = perScreen();
     if (cropRect) {
       ctx.save();
       ctx.fillStyle = 'rgba(0,0,0,.35)';
@@ -2163,25 +2215,82 @@ async function openImageEditor(source, { autoAI = false } = {}) {
       ctx.rect(0, 0, canvas.width, canvas.height);
       ctx.rect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
       ctx.fill('evenodd');
-      ctx.strokeStyle = '#c1785c'; ctx.lineWidth = 3;
+      ctx.strokeStyle = '#c1785c'; ctx.lineWidth = 3 * k;
       ctx.strokeRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
+      // Ручки по углам и серединам сторон: без них не видно, что рамку
+      // можно поправить, а не только обвести заново.
+      const s2 = 7 * k;
+      ctx.fillStyle = '#fff'; ctx.lineWidth = 2 * k;
+      for (const [hx, hy] of cropHandles(cropRect)) {
+        ctx.beginPath();
+        ctx.rect(hx - s2, hy - s2, s2 * 2, s2 * 2);
+        ctx.fill(); ctx.stroke();
+      }
       ctx.restore();
     }
     if (lassoPts && lassoPts.length > 1) {
       ctx.save();
-      ctx.strokeStyle = '#c1785c'; ctx.lineWidth = 3; ctx.setLineDash([8, 6]);
+      ctx.strokeStyle = '#c1785c'; ctx.lineWidth = 3 * k; ctx.setLineDash([8 * k, 6 * k]);
       ctx.beginPath();
       ctx.moveTo(lassoPts[0].x, lassoPts[0].y);
       lassoPts.forEach(p => ctx.lineTo(p.x, p.y));
       ctx.stroke();
       ctx.restore();
     }
-    if (hoverPt && (tool === 'erase' || tool === 'restore')) {
+    if (hoverPt && isBrush()) {
       ctx.save();
-      ctx.strokeStyle = tool === 'erase' ? '#d94f45' : '#4f8a5b'; ctx.lineWidth = 2;
+      ctx.strokeStyle = tool === 'erase' ? '#d94f45' : tool === 'paint' ? paintColor : '#4f8a5b';
+      ctx.lineWidth = 2 * k;
       ctx.beginPath(); ctx.arc(hoverPt.x, hoverPt.y, brush / 2, 0, 7); ctx.stroke();
       ctx.restore();
     }
+  }
+
+  /* ---------- рамка кропа ----------
+   * Выделить область с первого раза пальцем не получается: то лишнее влезло,
+   * то нужный край отрезан. Поэтому готовую рамку можно двигать целиком и
+   * тянуть за любую сторону или угол — пока не нажато «Применить», ничего
+   * со снимком не происходит.
+   */
+  const cropHandles = r => [
+    [r.x, r.y], [r.x + r.w / 2, r.y], [r.x + r.w, r.y],
+    [r.x, r.y + r.h / 2], [r.x + r.w, r.y + r.h / 2],
+    [r.x, r.y + r.h], [r.x + r.w / 2, r.y + r.h], [r.x + r.w, r.y + r.h]
+  ];
+
+  /** Сторона, угол или середина — либо null, и тогда рисуется новая рамка. */
+  function cropHit(p) {
+    if (!cropRect) return null;
+    const t = 22 * perScreen();           // 22 точки экрана — палец попадает
+    const { x, y, w, h } = cropRect;
+    if (p.x < x - t || p.x > x + w + t || p.y < y - t || p.y > y + h + t) return null;
+    const side =
+      (Math.abs(p.y - y) <= t ? 'n' : Math.abs(p.y - (y + h)) <= t ? 's' : '') +
+      (Math.abs(p.x - x) <= t ? 'w' : Math.abs(p.x - (x + w)) <= t ? 'e' : '');
+    if (side) return { mode: side, rect0: { ...cropRect } };
+    const inside = p.x > x && p.x < x + w && p.y > y && p.y < y + h;
+    return inside ? { mode: 'move', rect0: { ...cropRect } } : null;
+  }
+
+  function dragCrop(d, p) {
+    const r0 = d.rect0, dx = p.x - startPt.x, dy = p.y - startPt.y;
+    if (d.mode === 'move') {
+      // целиком за край не уводим: вернуть рамку оттуда было бы нечем
+      cropRect = {
+        w: r0.w, h: r0.h,
+        x: Math.min(work.width - r0.w, Math.max(0, r0.x + dx)),
+        y: Math.min(work.height - r0.h, Math.max(0, r0.y + dy))
+      };
+      return;
+    }
+    let { x, y, w, h } = r0;
+    if (d.mode.includes('w')) { x = r0.x + dx; w = r0.w - dx; }
+    if (d.mode.includes('e')) { w = r0.w + dx; }
+    if (d.mode.includes('n')) { y = r0.y + dy; h = r0.h - dy; }
+    if (d.mode.includes('s')) { h = r0.h + dy; }
+    if (w < 0) { x += w; w = -w; }        // сторону протащили через противоположную
+    if (h < 0) { y += h; h = -h; }
+    cropRect = { x, y, w, h };
   }
 
   /* ---------- ввод ---------- */
@@ -2207,8 +2316,14 @@ async function openImageEditor(source, { autoAI = false } = {}) {
   function cancelStroke() {
     if (!drawing) return;
     drawing = false; last = null;
-    if (tool === 'crop') { cropRect = null; render(); return; }
-    undo();   // ластик, восстановление и лассо успели записать шаг в историю
+    if (tool === 'pan') { panDrag = null; return; }
+    if (tool === 'crop') {
+      // правили готовую рамку — возвращаем её, рисовали новую — убираем
+      if (cropDrag) { cropRect = cropDrag.rect0; cropDrag = null; }
+      else cropRect = null;
+      render(); return;
+    }
+    undo();   // ластик, кисть, восстановление и лассо записали шаг в историю
   }
 
   function startPinch() {
@@ -2242,12 +2357,23 @@ async function openImageEditor(source, { autoAI = false } = {}) {
     if (pts.size > 2) return;
 
     try { canvas.setPointerCapture(e.pointerId); } catch (_) { }
+
+    if (tool === 'pan') {
+      drawing = true;
+      panDrag = { x: e.clientX, y: e.clientY, panX, panY };
+      return;
+    }
+
     const p = toWork(e);
+    if (picking) { pickColor(p); return; }
     if (tool === 'wand') { pushHistory(); magicWand(p.x | 0, p.y | 0); render(); return; }
     drawing = true; last = p; startPt = p;
-    if (tool === 'erase' || tool === 'restore') { pushHistory(); paint(p, p); render(); }
+    if (isBrush()) { pushHistory(); paint(p, p); render(); }
     if (tool === 'lasso') { pushHistory(); lassoPts = [p]; }
-    if (tool === 'crop') cropRect = { x: p.x, y: p.y, w: 0, h: 0 };
+    if (tool === 'crop') {
+      cropDrag = cropHit(p);
+      if (!cropDrag) { cropRect = { x: p.x, y: p.y, w: 0, h: 0 }; renderOpts(); }
+    }
   });
 
   canvas.addEventListener('pointermove', e => {
@@ -2255,13 +2381,22 @@ async function openImageEditor(source, { autoAI = false } = {}) {
     if (pinch) { if (pts.size >= 2) movePinch(); return; }
     if (pts.size > 1) return;
 
+    if (tool === 'pan') {
+      if (!panDrag) return;
+      panX = panDrag.panX + (e.clientX - panDrag.x);
+      panY = panDrag.panY + (e.clientY - panDrag.y);
+      applyView();
+      return;
+    }
+
     const p = toWork(e);
     hoverPt = p;
-    if (!drawing) { if (tool === 'erase' || tool === 'restore') render(); return; }
-    if (tool === 'erase' || tool === 'restore') { paint(last, p); last = p; render(); }
+    if (!drawing) { if (isBrush()) render(); return; }
+    if (isBrush()) { paint(last, p); last = p; render(); }
     else if (tool === 'lasso') { lassoPts.push(p); render(); }
     else if (tool === 'crop') {
-      cropRect = {
+      if (cropDrag) dragCrop(cropDrag, p);
+      else cropRect = {
         x: Math.min(startPt.x, p.x), y: Math.min(startPt.y, p.y),
         w: Math.abs(p.x - startPt.x), h: Math.abs(p.y - startPt.y)
       };
@@ -2279,7 +2414,8 @@ async function openImageEditor(source, { autoAI = false } = {}) {
       return;
     }
     if (drawing && tool === 'lasso' && lassoPts && lassoPts.length > 4) applyLasso();
-    drawing = false; last = null;
+    if (tool === 'crop' && !cropDrag && cropRect) renderOpts();   // подсказка сменилась
+    drawing = false; last = null; cropDrag = null; panDrag = null;
   }
 
   canvas.addEventListener('pointerup', endPointer);
@@ -2306,12 +2442,29 @@ async function openImageEditor(source, { autoAI = false } = {}) {
       if (tool === 'erase') {
         ctx.globalCompositeOperation = 'destination-out';
         ctx.fill();
+      } else if (tool === 'paint') {
+        ctx.fillStyle = paintColor;
+        ctx.fill();
       } else {
         ctx.clip();
         ctx.drawImage(orig, 0, 0);
       }
       ctx.restore();
     }
+  }
+
+  /**
+   * Пипетка: цвет берём с рабочего снимка, а не с исходного, — красить
+   * собираются поверх того, что видно сейчас.
+   */
+  function pickColor(p) {
+    picking = false;
+    const x = Math.max(0, Math.min(work.width - 1, p.x | 0));
+    const y = Math.max(0, Math.min(work.height - 1, p.y | 0));
+    const d = work.getContext('2d', { willReadFrequently: true }).getImageData(x, y, 1, 1).data;
+    if (!d[3]) toast('Здесь прозрачно — цвета нет');
+    else paintColor = rgbToHex(d[0], d[1], d[2]);
+    renderOpts(); render();
   }
 
   // Заливка по клику: убираем связную область близкого цвета (аналог "Tap Background")
@@ -2347,14 +2500,19 @@ async function openImageEditor(source, { autoAI = false } = {}) {
 
   function applyCrop() {
     if (!cropRect || cropRect.w < 8 || cropRect.h < 8) { toast('Сначала выделите область'); return; }
+    // рамку могли вытянуть за край снимка — берём только пересечение
+    const x = Math.max(0, Math.round(cropRect.x));
+    const y = Math.max(0, Math.round(cropRect.y));
+    const w = Math.min(work.width, Math.round(cropRect.x + cropRect.w)) - x;
+    const hh = Math.min(work.height, Math.round(cropRect.y + cropRect.h)) - y;
+    if (w < 8 || hh < 8) { toast('Область почти вся за краем снимка'); return; }
     pushHistory();
     const out = document.createElement('canvas');
-    out.width = Math.round(cropRect.w); out.height = Math.round(cropRect.h);
-    out.getContext('2d').drawImage(work, Math.round(cropRect.x), Math.round(cropRect.y),
-      out.width, out.height, 0, 0, out.width, out.height);
+    out.width = w; out.height = hh;
+    out.getContext('2d').drawImage(work, x, y, w, hh, 0, 0, w, hh);
     work = out;
     cropRect = null;
-    render(); resetView();
+    render(); resetView(); renderOpts();
   }
 
   function applyLasso() {
@@ -2413,15 +2571,6 @@ async function openImageEditor(source, { autoAI = false } = {}) {
     render(); updateChrome();
   }
 
-  function reset() {
-    pushHistory();
-    work = document.createElement('canvas');
-    work.width = W; work.height = H;
-    work.getContext('2d', { willReadFrequently: true }).drawImage(orig, 0, 0);
-    cropRect = null; lassoPts = null;
-    render(); resetView();
-  }
-
   async function finish() {
     doneBtn.disabled = true;
     const trimmed = trimTransparent(work);
@@ -2432,7 +2581,6 @@ async function openImageEditor(source, { autoAI = false } = {}) {
   }
 
   renderToolbar(); renderOpts(); render(); updateChrome(); applyView();
-  if (autoAI) setTimeout(runAI, 120);
 
   return new Promise(res => { resolveFn = res; });
 }
@@ -2856,7 +3004,10 @@ const filters = (arc = nav.archive) => FILTERS[arc ? 'archive' : 'closet'];
 
 /* ---------- добавление вещи ---------- */
 async function addItemFlow(sourceBlob, preset = {}) {
-  const blob = await openImageEditor(sourceBlob, { autoAI: preset.autoAI !== false });
+  // Редактор открывается и ждёт: удалять фон, обрезать или оставить как есть —
+  // решает человек. Раньше ИИ срабатывал сам, и снимок менялся до того, как на
+  // него успевали посмотреть.
+  const blob = await openImageEditor(sourceBlob);
   if (!blob) return null;
   busy(true, 'Анализирую цвета…');
   let colors = [];
@@ -3096,13 +3247,14 @@ function openItemForm(item, isNew = false) {
       lining: (item.material?.lining || []).map(p => ({ ...p }))
     };
     let brandId = item.brandId || null;
+    let bg = item.bg;
     const colorIds = [...(item.colorIds || [])];
     // подсказка для новых цветов палитры — оттенки, снятые с этой фотографии
     const suggest = (item.colors || []).map(c => c.hex);
 
     const subSel = h('select', {});
     const catSel = h('select', {
-      onchange: () => { item.catId = catSel.value; fillSubs(); }
+      onchange: fillSubs
     }, closetCats().map(c => h('option', { value: c.id, selected: c.id === item.catId }, c.name)));
 
     function fillSubs() {
@@ -3114,29 +3266,36 @@ function openItemForm(item, isNew = false) {
     }
     fillSubs();
 
-    // Фотография правится отдельно от полей, но применяется вместе с ними:
-    // пока форма открыта, «Отмена» обязана вернуть прежний снимок.
+    /* Фотография — единственное, что сохраняется, не дожидаясь «Сохранить».
+     * Правка снимка идёт в отдельном окне с собственным «Готово», и требовать
+     * после него второго подтверждения — значит терять работу тех, кто решил,
+     * что уже сохранил. Отказаться от правок можно там же: выйти из редактора,
+     * не нажимая «Готово». У новой вещи сохранять ещё некуда — её снимок
+     * закрепляется общей кнопкой вместе с полями. */
     let img = item.img;
     let colors = item.colors || [];
 
     // снимок не нажимается: под ним стоят подписанные кнопки, а нажатие без
     // опознавательных знаков — та же скрытая функция, от которой мы уходим
     const preview = h('div', {
-      class: 'tile', style: { aspectRatio: '1', maxWidth: '190px', margin: '0 auto 10px', background: bgCss(item.bg) }
+      class: 'tile', style: { aspectRatio: '1', maxWidth: '190px', margin: '0 auto 10px', background: bgCss(bg) }
     }, h('img', { src: urlFor(img) }));
 
     async function applyPhoto(blob) {
       img = blob;
       preview.querySelector('img').src = urlFor(blob);
-      // строка молчит до тех пор, пока терять нечего: предупреждать заранее
-      // значит показывать её тем, кто ещё передумает, — а к частому
-      // предупреждению привыкают и перестают читать
-      warnEl.hidden = isNew;
       try {
         colors = extractPalette(await imageFromBlob(blob), 5);
         // подсказки для новых цветов палитры берём уже с нового снимка
         suggest.splice(0, suggest.length, ...colors.map(c => c.hex));
       } catch (e) { console.warn(e); }
+      if (isNew) return;
+      // сохраняем только снимок: остальные поля формы пока не трогаем — их
+      // ещё могут отменить
+      item.img = img;
+      item.colors = colors;
+      await saveItem(item);
+      toast('Снимок сохранён');
     }
 
     /**
@@ -3145,7 +3304,7 @@ function openItemForm(item, isNew = false) {
      * в списке частое действие стоит лишнего нажатия каждый раз.
      */
     async function editCurrent() {
-      const blob = await openImageEditor(img, { autoAI: false });
+      const blob = await openImageEditor(img);
       if (blob) await applyPhoto(blob);
     }
 
@@ -3160,17 +3319,11 @@ function openItemForm(item, isNew = false) {
       if (!act) return;
       const src = act === 'cam' ? await captureFromCamera() : await pickImageFile();
       if (!src) return;
-      // новый снимок проходит тот же путь, что и при добавлении вещи:
-      // та же обрезка и то же удаление фона
-      const blob = await openImageEditor(src, { autoAI: true });
+      // новый снимок проходит тот же путь, что и при добавлении вещи
+      const blob = await openImageEditor(src);
       if (blob) await applyPhoto(blob);
     }
 
-    // прежний снимок нигде не сохраняется, поэтому «Сохранить» здесь —
-    // точка невозврата. Про «Отмену» говорим прямо: сама по себе она
-    // не выглядит спасением
-    const warnEl = h('p', { class: 'warn-line', hidden: true, style: { margin: '-6px 0 14px' } },
-      'Прежний снимок будет заменён. Отмена вернёт его.');
 
     const photoBtns = h('div', { class: 'photo-btns' },
       h('button', { class: 'btn block', onclick: editCurrent }, '✎ Редактировать текущий снимок'),
@@ -3181,11 +3334,11 @@ function openItemForm(item, isNew = false) {
 
     const bgRow = h('div', { class: 'palette-row' }, BGS.map(b =>
       h('button', {
-        class: 'swatch' + (item.bg === b.id ? ' sel' : ''),
+        class: 'swatch' + (bg === b.id ? ' sel' : ''),
         style: { background: b.css, border: b.id === 'none' ? '1px dashed #bbb' : '' },
         title: b.name,
         onclick: e => {
-          item.bg = b.id;
+          bg = b.id;
           preview.style.background = b.css;
           [...bgRow.children].forEach(x => x.classList.remove('sel'));
           e.currentTarget.classList.add('sel');
@@ -3205,7 +3358,7 @@ function openItemForm(item, isNew = false) {
     const modal = openModal({
       title: isNew ? 'Новая вещь' : 'Редактировать',
       body: h('div', {},
-        preview, photoBtns, warnEl,
+        preview, photoBtns,
         h('div', { class: 'section-title' }, 'Фон карточки'), bgRow,
         h('label', { class: 'field' }, h('span', {}, 'Категория'), catSel),
         h('label', { class: 'field' }, h('span', {}, 'Подкатегория'), subSel),
@@ -3223,6 +3376,7 @@ function openItemForm(item, isNew = false) {
           class: 'btn primary', onclick: async () => {
             item.catId = catSel.value || null;
             item.subId = subSel.value || null;
+            item.bg = bg;
             // значение списка могли удалить, пока форма была открыта
             const alive = (key, id) => (listEntry(key, id) ? id : null);
             item.brandId = alive('brands', brandId);

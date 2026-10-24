@@ -162,6 +162,7 @@ export async function openImageEditor(source) {
     clampPan();
     canvas.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
     zoomLbl.textContent = Math.round(zoom * 100) + '%';
+    fitBtn.disabled = zoom === 1 && !panX && !panY;
   }
 
   /** Масштаб вокруг точки экрана: то, что под пальцем, под ним и остаётся. */
@@ -186,14 +187,18 @@ export async function openImageEditor(source) {
   /* Отдельной строкой над снимком. Поверх снимка эти кнопки закрывали угол —
    * ровно тот, к которому при увеличении и подбираются.
    *
-   * Рука и «Отменить» стоят здесь же, а не среди инструментов: сдвигать
-   * нужно ровно тогда, когда приблизили, — это одна работа. А «Отменить»
-   * и вовсе не инструмент: оно не выбирается, а срабатывает. Инструментам
-   * заодно хватило одной строки, и подписи перестали обрезаться.
+   * Рука стоит здесь же, а не среди инструментов: сдвигать нужно ровно
+   * тогда, когда приблизили, — это одна работа, и делается она в одном
+   * месте.
    */
-  const undoBtn = h('button', {
-    class: 'zb', title: 'Отменить последнее действие', onclick: () => undo()
-  }, '⟲');
+  // «Вписать» возвращает снимок к исходному виду: масштаб 100%, без сдвига.
+  // Пока возвращать нечего, кнопка погашена — иначе она выглядит сломанной:
+  // нажимаешь, и ничего не происходит.
+  const fitBtn = h('button', {
+    class: 'zb wide', title: 'Вернуть масштаб 100% и показать снимок целиком',
+    onclick: resetView
+  }, 'Вписать');
+
   const panBtn = h('button', {
     class: 'zb hand', title: 'Сдвинуть снимок',
     onclick: () => {
@@ -204,18 +209,18 @@ export async function openImageEditor(source) {
   }, '✋ Сдвинуть');
 
   const zoomBar = h('div', { class: 'zoom-bar' },
-    undoBtn,
     panBtn,
     h('span', { class: 'spacer' }),
     h('button', { class: 'zb', title: 'Отдалить', onclick: () => stepZoom(1 / 1.6) }, '−'),
     zoomLbl,
     h('button', { class: 'zb', title: 'Приблизить', onclick: () => stepZoom(1.6) }, '+'),
-    h('button', { class: 'zb wide', title: 'Показать целиком', onclick: resetView }, 'Вписать')
+    fitBtn
   );
 
   const wrap = h('div', { id: 'ed-wrap' }, canvas);
   const opts = h('div', { class: 'tool-opts' });
   const toolbar = h('div', { class: 'tools' });
+  const fixbar = h('div', { class: 'tools fixes' });
 
   let tool = 'wand';
   let tolerance = 0.18, brush = 34;
@@ -231,24 +236,35 @@ export async function openImageEditor(source) {
     { id: 'ai', ic: '✨', label: 'ИИ-фон', action: runAI },
     { id: 'wand', ic: '🪄', label: 'Палочка' },
     { id: 'erase', ic: '🧽', label: 'Ластик' },
-    { id: 'restore', ic: '↩️', label: 'Вернуть' },
     { id: 'paint', ic: '🖌', label: 'Кисть' },
     { id: 'crop', ic: '⬛', label: 'Кроп' },
     { id: 'lasso', ic: '✂️', label: 'Лассо' }
   ];
 
+  /* Вторая строка — то, чем исправляют уже сделанное. Отдельно от
+     инструментов, потому что отменяют часто и вслепую: кнопка должна быть
+     крупной и всегда на одном месте, а не одной из восьми одинаковых.
+     «Вернуть» рядом — работа у них соседняя, но разная: «Отменить» снимает
+     целое действие, «Вернуть» возвращает исходник только там, где провели. */
+  const FIXES = [
+    { id: 'undo', ic: '⟲', label: 'Отменить', action: undo },
+    { id: 'restore', ic: '↩️', label: 'Вернуть' }
+  ];
+
+  const toolBtn = t => h('button', {
+    class: 'tool' + (tool === t.id ? ' active' : ''),
+    onclick: () => {
+      if (t.action) { t.action(); return; }
+      tool = t.id; cropRect = null; picking = false;
+      renderToolbar(); renderOpts(); render();
+    }
+  }, h('span', { class: 'ic' }, t.ic), h('span', {}, t.label));
+
   function renderToolbar() {
     panBtn.classList.toggle('on', tool === 'pan');
-    fill(toolbar, ...TOOLS.map(t =>
-      h('button', {
-        class: 'tool' + (tool === t.id ? ' active' : ''),
-        onclick: () => {
-          if (t.action) { t.action(); return; }
-          tool = t.id; cropRect = null; picking = false;
-          renderToolbar(); renderOpts(); render();
-        }
-      }, h('span', { class: 'ic' }, t.ic), h('span', {}, t.label))
-    ));
+    fill(toolbar, ...TOOLS.map(toolBtn));
+    fill(fixbar, ...FIXES.map(toolBtn));
+    updateChrome();
   }
 
   const brushSlider = () => {
@@ -265,8 +281,13 @@ export async function openImageEditor(source) {
       const r = h('input', { type: 'range', min: 2, max: 60, value: Math.round(tolerance * 100), oninput: e => { tolerance = e.target.value / 100; lbl.textContent = `Чувствительность: ${e.target.value}%`; } });
       const lbl = h('div', { class: 'muted small' }, `Чувствительность: ${Math.round(tolerance * 100)}%`);
       opts.append(lbl, r, h('div', { class: 'muted small' }, 'Нажмите на фон — область удалится.'));
-    } else if (tool === 'erase' || tool === 'restore') {
+    } else if (tool === 'erase') {
       opts.append(brushSlider());
+    } else if (tool === 'restore') {
+      opts.append(
+        h('div', { class: 'muted small' },
+          'Проведите по стёртому — вернётся то, что было на исходном снимке.'),
+        brushSlider());
     } else if (tool === 'paint') {
       opts.append(
         h('div', { class: 'row' },
@@ -299,13 +320,14 @@ export async function openImageEditor(source) {
   const modal = openModal({
     title: 'Обработка снимка',
     full: true,
-    body: h('div', { style: { display: 'flex', flexDirection: 'column', height: '100%', margin: '-12px' } }, zoomBar, wrap, opts, toolbar),
+    body: h('div', { style: { display: 'flex', flexDirection: 'column', height: '100%', margin: '-12px' } }, zoomBar, wrap, opts, toolbar, fixbar),
     foot: [h('button', { class: 'btn', onclick: () => { modal.close(); } }, 'Отмена'), doneBtn],
     onClose: () => resolveFn && resolveFn(null)
   });
 
   function updateChrome() {
-    undoBtn.disabled = history.length === 0;
+    const btn = fixbar.firstChild;          // «Отменить» всегда первая
+    if (btn) btn.disabled = history.length === 0;
   }
 
   /* ---------- отрисовка ---------- */

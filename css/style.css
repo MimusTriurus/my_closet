@@ -335,6 +335,12 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent-soft);bor
 /* подпись не переносится и не растягивает кнопку: лучше узкая строка,
    чем ряд кнопок разной высоты */
 .tool>span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+/* вторая строка — чем исправляют сделанное. Кнопки широкие и подписаны
+   в строку: отменяют часто и не глядя, туда надо попадать не целясь */
+.tools.fixes{padding-top:0;border-top:0}
+.tools.fixes .tool{flex-direction:row;gap:6px;padding:9px 6px;font-size:12px}
+.tools.fixes .tool .ic{font-size:15px}
+.tool:disabled{opacity:.4}
 .tool .ic{font-size:16px}
 .tool.active{background:var(--accent);border-color:var(--accent);color:#fff}
 .tool-opts{flex:none;padding:8px 12px;background:var(--surface);border-top:1px solid var(--line);font-size:12px}

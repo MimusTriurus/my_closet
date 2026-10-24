@@ -1,6 +1,6 @@
 // Вкладка «Гардероб»: категории, подкатегории, фильтр по цвету, сортировка, карточка вещи.
 import {
-  fill, h, qs, urlFor, toast, openModal, confirmDialog, actionSheet, busy, plural, nItems, nOutfits
+  fill, h, qs, urlFor, toast, openModal, confirmDialog, actionSheet, pickOne, busy, plural, nItems, nOutfits
 } from './ui.js';
 import { openListPicker, entryName } from './fields.js';
 import { openCategoryManager, openSubManager } from './cats.js';
@@ -274,19 +274,46 @@ export function openItemForm(item, isNew = false) {
     // подсказка для новых цветов палитры — оттенки, снятые с этой фотографии
     const suggest = (item.colors || []).map(c => c.hex);
 
-    const subSel = h('select', {});
-    const catSel = h('select', {
-      onchange: fillSubs
-    }, closetCats().map(c => h('option', { value: c.id, selected: c.id === item.catId }, c.name)));
+    /* Категория и подкатегория выбираются своим списком, а не системным
+       `<select>`: тот рисует телефон — на своём языке и в своём виде. */
+    let catId = item.catId;
+    let subId = item.subId;
 
-    function fillSubs() {
-      const cat = catById(catSel.value);
-      fill(subSel,
-        h('option', { value: '' }, '— без подкатегории —'),
-        ...(cat?.subs || []).map(s => h('option', { value: s.id, selected: s.id === item.subId }, s.name))
-      );
+    const catBtn = h('button', {
+      class: 'btn block pick', onclick: async () => {
+        const v = await pickOne('Категория',
+          closetCats().map(c => ({ value: c.id, label: c.name })), catId);
+        if (v === undefined || v === catId) return;
+        catId = v;
+        // подкатегории принадлежат своей категории: в новой прежней нет
+        subId = null;
+        paintCat();
+      }
+    });
+
+    const subBtn = h('button', {
+      class: 'btn block pick', onclick: async () => {
+        const subs = catById(catId)?.subs || [];
+        const v = await pickOne('Подкатегория', [
+          { value: '', label: 'Без подкатегории' },
+          ...subs.map(s => ({ value: s.id, label: s.name }))
+        ], subId || '');
+        if (v === undefined) return;
+        subId = v || null;
+        paintCat();
+      }
+    });
+
+    function paintCat() {
+      const cat = catById(catId);
+      fill(catBtn, h('span', { class: cat ? '' : 'muted' }, cat?.name || 'не выбрана'));
+      const subs = cat?.subs || [];
+      const name = subs.find(s => s.id === subId)?.name;
+      subBtn.disabled = !subs.length;
+      fill(subBtn, h('span', { class: name ? '' : 'muted' },
+        !subs.length ? 'у категории нет подкатегорий' : name || 'без подкатегории'));
     }
-    fillSubs();
+    paintCat();
 
     /* Фотография — единственное, что сохраняется, не дожидаясь «Сохранить».
      * Правка снимка идёт в отдельном окне с собственным «Готово», и требовать
@@ -389,8 +416,8 @@ export function openItemForm(item, isNew = false) {
       body: h('div', {},
         preview, photoBtns,
         h('div', { class: 'section-title' }, 'Фон карточки'), bgRow,
-        h('label', { class: 'field' }, h('span', {}, 'Категория'), catSel),
-        h('label', { class: 'field' }, h('span', {}, 'Подкатегория'), subSel),
+        h('label', { class: 'field' }, h('span', {}, 'Категория'), catBtn),
+        h('label', { class: 'field' }, h('span', {}, 'Подкатегория'), subBtn),
         listField('Производитель', 'brands', () => brandId, v => { brandId = v; }, 'не указан'),
         colorsGroup(colorIds, suggest),
         compositionGroup('Состав', mat.main),
@@ -403,8 +430,8 @@ export function openItemForm(item, isNew = false) {
         h('button', { class: 'btn', onclick: () => modal.close() }, 'Отмена'),
         h('button', {
           class: 'btn primary', onclick: async () => {
-            item.catId = catSel.value || null;
-            item.subId = subSel.value || null;
+            item.catId = catId || null;
+            item.subId = subId || null;
             item.bg = bg;
             // значение списка могли удалить, пока форма была открыта
             const alive = (key, id) => (listEntry(key, id) ? id : null);

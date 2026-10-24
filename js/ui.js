@@ -279,6 +279,30 @@ export function actionSheet(title, actions) {
   });
 }
 
+/**
+ * Выбор одного значения из заданного списка — замена системному `<select>`.
+ * Тот рисуется телефоном: на языке телефона и в его оформлении, посреди
+ * нашей формы. Здесь же — наш список, наш язык, видно текущее значение.
+ *
+ * Отказ возвращает `undefined`, а не `null`: пустое значение (например,
+ * «без подкатегории») — такой же полноценный выбор, и их надо различать.
+ */
+export function pickOne(title, options, selected = null) {
+  return new Promise(res => {
+    let done = false;
+    const m = openModal({
+      title,
+      body: h('div', { class: 'list' },
+        options.map(o => h('button', {
+          class: 'btn block pick-opt' + (o.value === selected ? ' on' : ''),
+          onclick: () => { done = true; res(o.value); m.close(); }
+        }, h('span', { class: 'mark' }, o.value === selected ? '✓' : ''), o.label))
+      ),
+      onClose: () => { if (!done) res(undefined); }
+    });
+  });
+}
+
 /** Сообщение без выбора — когда действие не выполнено и надо объяснить почему. */
 export function alertDialog(text, title = 'Так нельзя') {
   return new Promise(res => {

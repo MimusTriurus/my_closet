@@ -150,6 +150,12 @@ main#views{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scro
 
 /* значение, выбираемое из общего списка */
 .btn.pick{justify-content:flex-start;text-align:left;font-weight:500}
+.btn.pick:disabled{opacity:.6}
+/* строка выбора: галочка стоит в своей колонке, чтобы подписи у всех
+   строк начинались на одной вертикали, а не прыгали от неё */
+.btn.block.pick-opt{justify-content:flex-start;text-align:left;font-weight:500;margin-bottom:2px}
+.btn.block.pick-opt .mark{display:inline-block;width:20px;flex:0 0 20px;color:var(--accent)}
+.btn.block.pick-opt.on{border-color:var(--accent);color:var(--accent)}
 .lrow.on{border-color:var(--accent)}
 .lrow .tick{color:var(--accent);font-weight:700}
 

@@ -220,13 +220,17 @@ export function openModal({ title, body, foot, full = false, onClose, closeText 
  * `warn` — когда соглашаются на потерю: строка становится красной, как и
  * остальные предупреждения о том, чего не вернуть.
  */
-export function confirmDialog(text, okText = 'Удалить', warn = false) {
+export function confirmDialog(text, okText = 'Удалить', warn = false, note = null) {
   return new Promise(res => {
     let answered = false;
     const answer = v => { answered = true; res(v); m.close(); };
     const m = openModal({
       title: 'Подтверждение',
-      body: h('p', { class: warn ? 'warn-line' : '', style: { margin: '4px 0 8px' } }, text),
+      body: h('div', {},
+        h('p', { class: warn ? 'warn-line' : '', style: { margin: '4px 0 8px' } }, text),
+        // `note` — то, что успокаивает: красным его красить нельзя, иначе
+        // предупреждение и утешение сливаются в одно неразличимое пятно
+        note ? h('p', { class: 'muted small', style: { margin: '0 0 8px' } }, note) : null),
       foot: [
         h('button', { class: 'btn', onclick: () => answer(false) }, 'Отмена'),
         h('button', { class: 'btn primary', onclick: () => answer(true) }, okText)

@@ -27,12 +27,17 @@ function renderTopbar() {
   back.hidden = !inner?.back;
   back.onclick = inner?.back || null;
 
+  /* Действие этого экрана и настройки всего приложения — разные вещи, и
+     стоять впритык им нельзя: в поездке «⋯» оказывалось в полпальца от
+     шестерёнки. Разделяем их чертой и отступом — отдельной строки это не
+     стоит: она отняла бы высоту на каждом экране ради кнопки, которую
+     нажимают изредка. */
   const actions = qs('#tb-actions');
   fill(actions,
     inner?.action
-      ? h('button', {
+      ? [h('button', {
         class: 'icon-btn', title: inner.action.title, onclick: inner.action.onclick
-      }, inner.action.icon)
+      }, inner.action.icon), h('span', { class: 'tb-sep' })]
       : null,
     h('button', { class: 'icon-btn', title: 'Настройки', onclick: openSettings }, '⚙️')
   );

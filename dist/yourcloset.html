@@ -83,6 +83,9 @@ img{max-width:100%;display:block}
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
 .tb-left,.tb-right{min-width:76px;display:flex;gap:4px;align-items:center}
+/* черта между действием экрана и настройками: иначе «⋯» и шестерёнка
+   читаются как одна пара кнопок, и палец попадает не туда */
+.tb-sep{width:1px;height:18px;background:var(--line);margin:0 5px;flex:0 0 1px}
 .tb-right{justify-content:flex-end}
 .icon-btn{
   background:none;border:0;padding:6px 8px;border-radius:10px;font-size:19px;line-height:1;
@@ -853,13 +856,17 @@ function openModal({ title, body, foot, full = false, onClose, closeText = '✕'
  * `warn` — когда соглашаются на потерю: строка становится красной, как и
  * остальные предупреждения о том, чего не вернуть.
  */
-function confirmDialog(text, okText = 'Удалить', warn = false) {
+function confirmDialog(text, okText = 'Удалить', warn = false, note = null) {
   return new Promise(res => {
     let answered = false;
     const answer = v => { answered = true; res(v); m.close(); };
     const m = openModal({
       title: 'Подтверждение',
-      body: h('p', { class: warn ? 'warn-line' : '', style: { margin: '4px 0 8px' } }, text),
+      body: h('div', {},
+        h('p', { class: warn ? 'warn-line' : '', style: { margin: '4px 0 8px' } }, text),
+        // `note` — то, что успокаивает: красным его красить нельзя, иначе
+        // предупреждение и утешение сливаются в одно неразличимое пятно
+        note ? h('p', { class: 'muted small', style: { margin: '0 0 8px' } }, note) : null),
       foot: [
         h('button', { class: 'btn', onclick: () => answer(false) }, 'Отмена'),
         h('button', { class: 'btn primary', onclick: () => answer(true) }, okText)
@@ -2809,6 +2816,7 @@ function scanColorFromCamera() {
 
 
 
+
 const NO_CAT = '__nocat';
 const NO_SUB = '__nosub';
 const ALL = '__all';
@@ -2871,7 +2879,11 @@ function pickItems({ title = 'Выбрать вещи', selected = [], multi = t
         sel.has(it.id) ? sel.delete(it.id) : sel.add(it.id);
         render();
       }
-    }, h('img', { src: urlFor(it.img) }));
+    },
+      h('img', { src: urlFor(it.img) }),
+      // Подпись та же, что в «Гардеробе»: без неё десяток чёрных лонгсливов
+      // отличается только пикселями, а выбирают здесь как раз из похожих
+      it.brandId ? h('span', { class: 'lbl' }, entryName('brands', it.brandId)) : null);
 
     function render() {
       doneBtn.textContent = sel.size ? `Готово · ${sel.size}` : 'Готово';
@@ -4864,10 +4876,17 @@ function copyOutfit(o, drop = []) {
 
 async function removeOutfit(o) {
   const days = state.calendar.filter(d => (d.outfitIds || []).includes(o.id)).length;
-  const text = days
-    ? `Образ использован в ${plural(days, 'дне', 'днях', 'днях')} календаря. Удалить вместе с записями?`
-    : 'Удалить образ?';
-  if (!await confirmDialog(text)) return;
+  // Сам образ удаляют осознанно, а вот записи в календаре пропадут заодно —
+  // про них и предупреждаем, красным, как про всякую невозвратную потерю
+  // При одном дне число ничего не добавляет, а «в 1 дне» читается спотыкаясь
+  const text = days === 1
+    ? 'Образ записан в календаре. Эта запись исчезнет вместе с ним, '
+      + 'и вернуть её будет нельзя.'
+    : days
+      ? `Образ записан в ${plural(days, 'дне', 'днях', 'днях')} календаря. `
+        + 'Эти записи исчезнут вместе с ним, и вернуть их будет нельзя.'
+      : 'Удалить образ?';
+  if (!await confirmDialog(text, 'Удалить', !!days)) return;
   closeOutfitCard();
   await deleteOutfit(o.id);
   toast(days ? 'Образ и записи удалены' : 'Образ удалён');
@@ -5301,7 +5320,9 @@ async function tripActions(trip) {
     trip.name = n;
     await saveTrip(trip);          // saveTrip перерисует и шапку: заголовок её
   } else if (act === 'del') {
-    if (await confirmDialog(`Удалить поездку «${trip.name}»? Вещи останутся в гардеробе.`)) {
+    if (await confirmDialog(
+      `Поездка «${trip.name}» и её список будут удалены. Отменить это нельзя.`,
+      'Удалить', true, 'Сами вещи останутся в гардеробе.')) {
       await deleteTrip(trip.id);
       closeTrip();
     }
@@ -5670,12 +5691,17 @@ function renderTopbar() {
   back.hidden = !inner?.back;
   back.onclick = inner?.back || null;
 
+  /* Действие этого экрана и настройки всего приложения — разные вещи, и
+     стоять впритык им нельзя: в поездке «⋯» оказывалось в полпальца от
+     шестерёнки. Разделяем их чертой и отступом — отдельной строки это не
+     стоит: она отняла бы высоту на каждом экране ради кнопки, которую
+     нажимают изредка. */
   const actions = qs('#tb-actions');
   fill(actions,
     inner?.action
-      ? h('button', {
+      ? [h('button', {
         class: 'icon-btn', title: inner.action.title, onclick: inner.action.onclick
-      }, inner.action.icon)
+      }, inner.action.icon), h('span', { class: 'tb-sep' })]
       : null,
     h('button', { class: 'icon-btn', title: 'Настройки', onclick: openSettings }, '⚙️')
   );

@@ -80,7 +80,9 @@ async function tripActions(trip) {
     trip.name = n;
     await saveTrip(trip);          // saveTrip перерисует и шапку: заголовок её
   } else if (act === 'del') {
-    if (await confirmDialog(`Удалить поездку «${trip.name}»? Вещи останутся в гардеробе.`)) {
+    if (await confirmDialog(
+      `Поездка «${trip.name}» и её список будут удалены. Отменить это нельзя.`,
+      'Удалить', true, 'Сами вещи останутся в гардеробе.')) {
       await deleteTrip(trip.id);
       closeTrip();
     }

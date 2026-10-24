@@ -1,6 +1,7 @@
 // Универсальный выбор вещей / образов (для образов, календаря, чемодана).
 import { fill, h, openModal, urlFor, nItems, nOutfits } from './ui.js';
 import { state, visibleItems, closetCats, outfitCats, archivedInOutfit } from './state.js';
+import { entryName } from './fields.js';
 import { bgCss } from './bgs.js';
 
 const NO_CAT = '__nocat';
@@ -65,7 +66,11 @@ export function pickItems({ title = 'Выбрать вещи', selected = [], mu
         sel.has(it.id) ? sel.delete(it.id) : sel.add(it.id);
         render();
       }
-    }, h('img', { src: urlFor(it.img) }));
+    },
+      h('img', { src: urlFor(it.img) }),
+      // Подпись та же, что в «Гардеробе»: без неё десяток чёрных лонгсливов
+      // отличается только пикселями, а выбирают здесь как раз из похожих
+      it.brandId ? h('span', { class: 'lbl' }, entryName('brands', it.brandId)) : null);
 
     function render() {
       doneBtn.textContent = sel.size ? `Готово · ${sel.size}` : 'Готово';

@@ -585,10 +585,17 @@ export function copyOutfit(o, drop = []) {
 
 async function removeOutfit(o) {
   const days = state.calendar.filter(d => (d.outfitIds || []).includes(o.id)).length;
-  const text = days
-    ? `Образ использован в ${plural(days, 'дне', 'днях', 'днях')} календаря. Удалить вместе с записями?`
-    : 'Удалить образ?';
-  if (!await confirmDialog(text)) return;
+  // Сам образ удаляют осознанно, а вот записи в календаре пропадут заодно —
+  // про них и предупреждаем, красным, как про всякую невозвратную потерю
+  // При одном дне число ничего не добавляет, а «в 1 дне» читается спотыкаясь
+  const text = days === 1
+    ? 'Образ записан в календаре. Эта запись исчезнет вместе с ним, '
+      + 'и вернуть её будет нельзя.'
+    : days
+      ? `Образ записан в ${plural(days, 'дне', 'днях', 'днях')} календаря. `
+        + 'Эти записи исчезнут вместе с ним, и вернуть их будет нельзя.'
+      : 'Удалить образ?';
+  if (!await confirmDialog(text, 'Удалить', !!days)) return;
   closeOutfitCard();
   await deleteOutfit(o.id);
   toast(days ? 'Образ и записи удалены' : 'Образ удалён');
